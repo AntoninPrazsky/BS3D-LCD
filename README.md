@@ -3,7 +3,8 @@
 A 2.4" ST7565 128×64 monochrome LCD on a Raspberry Pi 5, as the front-panel display of the [BS3D](https://github.com/AntoninPrazsky/BS3D) game server (the Pi that runs [BS3D-API](https://github.com/AntoninPrazsky/BS3D-API)). It greets you with the game's animated startup logo; server statistics and status screens are next.
 
 <p align="center">
-  <img src="docs/screenshots/logo.gif" alt="The animated BS3D startup logo on the LCD (simulated)" width="710">
+  <img src="docs/screenshots/logo.gif" alt="The animated BS3D startup logo on the LCD (simulated)" width="710"><br>
+  <sub>The startup logo, simulated; <a href="#what-it-looks-like">photos of the real panel</a> below.</sub>
 </p>
 
 Most of it is not BS3D-specific and may be useful for any ST7565 panel on a Pi:
@@ -16,7 +17,16 @@ Most of it is not BS3D-specific and may be useful for any ST7565 panel on a Pi:
 
 ## What it looks like
 
-The pictures below are rendered by `bs3d-lcd screenshots`, which simulates the panel: a yellow-green STN background, blue-black pixels about 20 % taller than wide with thin gaps between them, and the faint shadow each pixel casts on the reflector behind the liquid crystal. It looks very different from the same picture on a modern IPS or OLED screen: more "digital", more retro.
+The yellow-green STN panel with its blue-black pixels looks very different from the same picture on a modern IPS or OLED screen: more "digital", more retro. Phone photos of the real thing (the camera's short exposure catches some of the greyscale flicker that the eye averages away):
+
+| | | |
+|:---:|:---:|:---:|
+| <img src="docs/photos/logo.jpg" alt="logo, photo"> | <img src="docs/photos/test.jpg" alt="test, photo"> | <img src="docs/photos/circles.jpg" alt="circles, photo"> |
+| <img src="docs/photos/planet.jpg" alt="planet, photo"> | <img src="docs/photos/bubbles.jpg" alt="bubbles, photo"> | <img src="docs/photos/gradient.jpg" alt="gradient, photo"> |
+
+### Simulated screenshots
+
+These are rendered by `bs3d-lcd screenshots`, which simulates the panel with colours and tones taken from the photos: the yellow-green background, pixels about 20 % taller than wide with gaps between them, blue-black when fully on and teal on the way there, and the soft shadow each pixel casts on the reflector behind the liquid crystal.
 
 | | |
 |:---:|:---:|
