@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bs3d-lcd"
+description = "ST7565 128x64 LCD on a Raspberry Pi 5: driver, greyscale, animated scenes, BS3D server display"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Antonín Pražský" }]
+requires-python = ">=3.11"
+dependencies = [
+    "luma.core>=2.4",
+    "Pillow>=10.1",
+    "gpiod>=2.1",
+    "spidev>=3.6",
+]
+dynamic = ["version"]
+
+[project.scripts]
+bs3d-lcd = "bs3d_lcd.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "bs3d_lcd.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["bs3d_lcd*"]
+
+[tool.setuptools.package-data]
+bs3d_lcd = ["assets/*.png"]
