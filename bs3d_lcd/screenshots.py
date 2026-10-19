@@ -97,8 +97,9 @@ def lcd(duty, aspect, pitch=10, colors=LCD_COLORS, level=1.0):
             cells.paste(cell, (x, y))
     pixels = ImageChops.multiply(dark, cells).filter(ImageFilter.GaussianBlur(0.35 * pitch / 10))
 
-    # The shadow falls downwards, onto the reflector.
-    shadow = ImageChops.offset(pixels, round(0.15 * px), round(0.3 * py))
+    # The shadow falls downwards, onto the reflector (shifted, not wrapped round).
+    shadow = Image.new("L", pixels.size)
+    shadow.paste(pixels, (round(0.15 * px), round(0.3 * py)))
     shadow = shadow.filter(ImageFilter.GaussianBlur(0.45 * pitch)).point(
         lambda v: round(v * SHADOW))
     alpha = ImageChops.screen(pixels, shadow)

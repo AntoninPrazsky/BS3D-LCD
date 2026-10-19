@@ -105,4 +105,4 @@ def logo(panel, blink=1.1, **_):
     return Scene("logo", "BS3D startup logo: bubble shot, pop reveal, 3D badge, blink, glint",
                  animated(panel, draw), panel.gray_fps, blink_after(blink_at, pulse, blink),
                  shots=(("", 2.6), ("1-shot", 0.3), ("2-reveal", 0.85), ("3-badge", 1.45),
-                        ("4-glint", shine_from + 0.4 * shine_time)))
+                        ("4-glint", shine_from + 0.4 * shine_time)), gray=draw)

@@ -1,6 +1,6 @@
 # BS3D-LCD
 
-A 2.4" ST7565 128×64 monochrome LCD on a Raspberry Pi 5, as the front-panel display of the [BS3D](https://github.com/AntoninPrazsky/BS3D) game server (the Pi that runs [BS3D-API](https://github.com/AntoninPrazsky/BS3D-API)). It greets you with the game's animated startup logo; server statistics and status screens are next.
+A 2.4" ST7565 128×64 monochrome LCD on a Raspberry Pi 5, as the front-panel display of the [BS3D](https://github.com/AntoninPrazsky/BS3D) game server (the Pi that runs [BS3D-API](https://github.com/AntoninPrazsky/BS3D-API)). It greets you with the game's animated startup logo, and is becoming the server's status display: whether the server is online, how the playing goes, and a siren when something fails ([the plan](https://github.com/AntoninPrazsky/BS3D-LCD/issues/1); it runs on made-up data for now).
 
 <p align="center">
   <img src="docs/screenshots/logo.gif" alt="The animated BS3D startup logo on the LCD (simulated)" width="710"><br>
@@ -13,6 +13,8 @@ Most of it is not BS3D-specific and may be useful for any ST7565 panel on a Pi:
 - **Smooth fades and blinks** of the whole panel by stepping the LCD drive voltage V0 through all 512 combinations of the chip's resistor ratio and electronic volume, far finer than the 64 contrast steps alone.
 - **17 grey levels on a 1-bit panel**, by temporal dithering (frame rate control): a 4×4 Bayer matrix whose thresholds shift every frame, sent at 200 frames per second.
 - **A supersampled greyscale canvas** for soft, sub-pixel-accurate shapes, with circles corrected for the panel's tall pixels.
+- **Pixel fonts with every Latin letter up to U+017F**, the public-domain X11 misc-fixed fonts read from BDF, since Pillow's bitmap fonts stop at 256 characters.
+- **Pages that push each other out** with an eased slide, and **an alarm** that pulses the whole panel through V0.
 - **Animated scenes**, calibration screens, and **screenshots** that simulate how the panel looks, with no hardware needed.
 
 ## What it looks like
@@ -39,6 +41,17 @@ The logo animation step by step: a bubble is shot up and pops, its ring reveals 
 | | | | |
 |:---:|:---:|:---:|:---:|
 | <img src="docs/screenshots/logo-1-shot.png" alt="shot"> | <img src="docs/screenshots/logo-2-reveal.png" alt="reveal"> | <img src="docs/screenshots/logo-3-badge.png" alt="badge"> | <img src="docs/screenshots/logo-4-glint.png" alt="glint"> |
+
+### The status display
+
+Pages take turns under a strip that always shows whether the server is online and what time it is (with a blinking colon, so a frozen panel is recognisably frozen). Each page is pushed out by the next one with a slide that starts slowly and brakes at the end. When something fails, the alert page takes over and the whole panel pulses like a siren until the error clears or the button is held. The data here are made up.
+
+| | |
+|:---:|:---:|
+| <img src="docs/screenshots/status-server.png" alt="server page"><br>Server: online, uptime, tunnel, last score | <img src="docs/screenshots/status-activity.png" alt="activity page"><br>Activity: submissions per hour, the current hour grey |
+| <img src="docs/screenshots/status-top.png" alt="top players page"><br>Top players, which then rolls like film credits | <img src="docs/screenshots/status-top-roll.png" alt="top players rolling"><br>…with the nicknames as the game shows them |
+| <img src="docs/screenshots/status-warnings.png" alt="warnings page"><br>Warnings, with how long each has stood | <img src="docs/screenshots/status-alert.png" alt="alert page"><br>An error: what, since when; the panel pulses |
+| <img src="docs/screenshots/status-push.gif" alt="the push between pages"><br>The push between two pages | <img src="docs/screenshots/status-siren.gif" alt="the siren"><br>The siren |
 
 ### Greyscale on a 1-bit panel
 
@@ -69,6 +82,7 @@ Developed on an OPEN-SMART 2.4" 128×64 ST7565 module (3.3 V) and a Raspberry Pi
 | CS | 24 | GPIO8, SPI0 CE0 → `/dev/spidev0.0` |
 | DC (A0, RS) | 22 | GPIO25 |
 | RST | 18 | GPIO24 |
+| Push button (optional) | 37 and 39 | GPIO26 and GND, for the status display |
 
 Turn SPI on once (it loads without a reboot; `/dev/spidev0.0` appears a moment later):
 
@@ -123,6 +137,24 @@ Values found on the OPEN-SMART panel, all of them the defaults:
 | `--gamma` | 0.65 | the LCD shows mid-tones lighter than their share of on-time |
 | `--pixel-aspect` | 0.83 | the 128×64 pixels cover 43×26 mm, so circles need squashing to look round |
 
+### The status display
+
+```
+.venv/bin/bs3d-lcd status --demo                    # the status display on made-up data
+.venv/bin/bs3d-lcd status --demo --page-time 4      # pages change faster
+.venv/bin/bs3d-lcd compare slide                    # push lengths and curves, labelled
+.venv/bin/bs3d-lcd compare siren                    # siren depths, shapes and periods
+.venv/bin/bs3d-lcd compare credits                  # speeds of the Top players roll
+```
+
+The logo plays first and is pushed out by the first page. With `--demo` the numbers change as time goes on, a warning comes and goes, and every 5 minutes an error sounds the siren for a minute.
+
+- **The button**, between GPIO26 (pin 37) and GND (pin 39), needs no resistor: the line's pull-up holds it high. A short press (released within 0.8 s) shows the next page, during the siren too. A hold of 1.5 s switches the alarm off; while the siren sounds, a bar along the bottom fills as you hold. The error then stays on the Warnings page until it clears, and a new error sounds again. `--button none` runs without it.
+- **The keyboard**, in a terminal: Enter is a short press, `a` + Enter a long hold, `e` or `w` + Enter raises or clears an error or a warning.
+- **Tuning:** `--slide`, `--easing`, `--page-time`, `--siren`, `--siren-period`, `--siren-shape`, `--credits-speed`, `--short-press`, `--long-press`; `bs3d-lcd status --help` lists them.
+
+It logs the frame rate once a minute (`--report`). On a Pi 5 it holds 200 fps with no late frames, using about 12 % of one core.
+
 ### Screenshots
 
 ```
@@ -130,7 +162,13 @@ Values found on the OPEN-SMART panel, all of them the defaults:
 .venv/bin/bs3d-lcd screenshots --out /tmp/shots --scenes planet --gif planet
 ```
 
-No hardware or SPI is needed. Each scene gets `NAME.png` (simulated LCD), `NAME-gray.png` (the averaged greyscale) and `NAME-frame.png` (one 1-bit frame); `--gif` adds animations.
+No hardware or SPI is needed. Each scene gets `NAME.png` (simulated LCD), `NAME-gray.png` (the averaged greyscale) and `NAME-frame.png` (one 1-bit frame); `--gif` adds animations. The status pages come as `status-*.png` with two animations, from made-up data (`--no-status` leaves them out).
+
+### Tests
+
+```
+.venv/bin/python -m unittest discover -s tests
+```
 
 ## Other panels and wiring
 
@@ -161,6 +199,8 @@ device.fade(0.8, 0.4)     # fade out over 0.4 s
 
 `bs3d_lcd.greyscale` has the dithering (`Dither`) and the greyscale canvas (`Canvas`); `bs3d_lcd.scene` has `Panel`, `Scene` and `play()`. A new scene is a function `scene(panel, **options) -> Scene` added to `bs3d_lcd.scenes.SCENES`; the ones in `bs3d_lcd/scenes/` show the patterns.
 
+`bs3d_lcd.font` draws the pixel fonts into greyscale images. `bs3d_lcd.status` is the status display: `State` (what is known about the server), the pages, the strip, the `Director` (rotation, push, alarm, button), the `Siren` and the `Button`.
+
 ## License
 
-The code is under the [MIT License](LICENSE). The BS3D logo (`bs3d_lcd/assets/bs3d-logo.png`, also shown in the screenshots) is part of the BS3D game and is not covered by it: all rights reserved.
+The code is under the [MIT License](LICENSE). The fonts in `bs3d_lcd/assets/fonts` are subsets of the X11 [misc-fixed](https://gitlab.freedesktop.org/xorg/font/misc-misc) fonts by Markus Kuhn and others, which are in the public domain ("Share and enjoy."); `tools/subset_fonts.py` makes them. The BS3D logo (`bs3d_lcd/assets/bs3d-logo.png`, also shown in the screenshots) is part of the BS3D game and is not covered by it: all rights reserved.

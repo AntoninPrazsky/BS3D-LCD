@@ -1,14 +1,19 @@
-"""Command line: play scenes, calibrate the panel, render screenshots."""
+"""Command line: play scenes, the server status display, calibrate the panel,
+render screenshots."""
 
 import argparse
+import queue
 import sys
+import threading
 from datetime import datetime
 
 from . import __doc__ as package_doc, scenes
+from .easing import EASINGS
 from .greyscale import Dither
 from .scene import Panel, run_scenes
 
-COMMANDS = ("demo", "sweep", "compare", "screenshots")
+COMMANDS = ("demo", "status", "sweep", "compare", "screenshots")
+COMPARE = ("fps", "phases", "gamma", "slide", "siren", "credits")
 
 
 def int_auto(value):
@@ -21,6 +26,15 @@ def spi_address(value):
     except ValueError:
         raise argparse.ArgumentTypeError("use BUS.DEVICE, e.g. 0.0 for /dev/spidev0.0")
     return port, device
+
+
+def button_line(value):
+    if value.lower() == "none":
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("a BCM GPIO number, or none")
 
 
 def scene_list(value):
@@ -106,6 +120,40 @@ def parsers():
                    help="leave the last frame on the display on exit")
     d.add_argument("--loop", action="store_true", help="repeat the scenes until Ctrl+C")
 
+    st = sub.add_parser("status", parents=[hardware, greyscale],
+                        help="the BS3D server's status display (for now with made-up data: "
+                             "--demo)")
+    st.add_argument("--demo", action="store_true",
+                    help="made-up data that change, with a warning and an error now and then; "
+                         "type Enter for a short press, a + Enter for a long hold, e or w + "
+                         "Enter to raise or clear an error or a warning")
+    g = st.add_argument_group("pages")
+    g.add_argument("--page-time", type=float, default=8.0, metavar="SECONDS",
+                   help="how long a page stays (default 8)")
+    g.add_argument("--slide", type=float, default=1.0, metavar="SECONDS",
+                   help="length of the push from page to page (default 1.0)")
+    g.add_argument("--easing", default="smootherstep", choices=tuple(EASINGS),
+                   help="the push's curve (default smootherstep)")
+    g.add_argument("--credits-speed", type=float, default=8.0, metavar="PX/S",
+                   help="speed of the Top players roll; faster blurs (default 8)")
+    g.add_argument("--no-logo", action="store_true", help="start without the logo")
+    g = st.add_argument_group("alarm")
+    g.add_argument("--siren", type=float, default=0.15, metavar="DEPTH",
+                   help="the level swings between 1 - DEPTH and 1 + DEPTH (default 0.15)")
+    g.add_argument("--siren-period", type=float, default=1.5, metavar="SECONDS",
+                   help="one swing of the siren (default 1.5)")
+    g.add_argument("--siren-shape", default="siren", choices=("siren", "sine"),
+                   help="siren: quick rise, slow fall (default); sine: even")
+    g.add_argument("--button", type=button_line, default=26, metavar="GPIO",
+                   help="BCM GPIO of the push button to GND (default 26, pin 37; none = "
+                        "no button)")
+    g.add_argument("--short-press", type=float, default=0.8, metavar="SECONDS",
+                   help="a release within this is a short press: the next page (default 0.8)")
+    g.add_argument("--long-press", type=float, default=1.5, metavar="SECONDS",
+                   help="a hold this long switches the alarm off (default 1.5)")
+    st.add_argument("--report", type=float, default=60.0, metavar="SECONDS",
+                    help="log the frame rate this often (default 60; 0 = never)")
+
     s = sub.add_parser("sweep", parents=[hardware, greyscale],
                        help="step through the contrast or ratio values to find the best")
     s.add_argument("what", nargs="?", default="contrast", choices=("contrast", "ratio"),
@@ -114,12 +162,16 @@ def parsers():
     s.add_argument("--hold", type=float, default=1.5, help="seconds per step (default 1.5)")
 
     c = sub.add_parser("compare", parents=[hardware, greyscale],
-                       help="step one greyscale setting through a range of values, "
-                            "labelled on the display")
-    c.add_argument("what", choices=("fps", "phases", "gamma"))
-    c.add_argument("--hold", type=float, default=6.0, help="seconds per value (default 6)")
+                       help="step one setting through a range of values, labelled on the "
+                            "display")
+    c.add_argument("what", choices=COMPARE,
+                   help="fps, phases, gamma: the greyscale; slide: the push between pages; "
+                        "siren: the alarm; credits: the speed of the Top players roll")
+    c.add_argument("--hold", type=float, default=None,
+                   help="seconds per value (default 6; slide: three pushes; credits: 15)")
     c.add_argument("--values", type=lambda v: [float(x) for x in v.split(",")],
-                   metavar="A,B,...", help="values instead of the built-in ones")
+                   metavar="A,B,...", help="values instead of the built-in ones (slide: "
+                                           "lengths; siren: depths; credits: speeds)")
 
     r = sub.add_parser("screenshots", parents=[greyscale, show],
                        help="render PNG screenshots of the scenes; no hardware needed")
@@ -132,6 +184,9 @@ def parsers():
                                           "(default logo; \"\" = none)")
     r.add_argument("--gif-length", type=float, default=4.6, metavar="SECONDS",
                    help="length of the animations (default 4.6)")
+    r.add_argument("--status", action=argparse.BooleanOptionalAction, default=True,
+                   help="also the status pages, a push and the siren, from made-up data "
+                        "(default yes)")
     return p
 
 
@@ -154,6 +209,74 @@ def open_device(args):
     return lcd
 
 
+def keyboard(source):
+    """The demo's keyboard: lines typed on stdin, as presses and alarms."""
+    from .status.button import LONG, SHORT
+
+    lines = queue.SimpleQueue()
+
+    def read():
+        for line in sys.stdin:
+            lines.put(line.strip().lower())
+    threading.Thread(target=read, name="keyboard", daemon=True).start()
+
+    def commands():
+        out = []
+        while True:
+            try:
+                line = lines.get_nowait()
+            except queue.Empty:
+                return out
+            if line == "":
+                out.append(SHORT)
+            elif line == "a":
+                out.append(LONG)
+            elif line in ("e", "w"):
+                key = "api-down" if line == "e" else "backup-old"
+                out.append(lambda now, key=key: source.toggle(key, now))
+    return commands
+
+
+def run_status(lcd, panel, args):
+    from .easing import EASINGS
+    from .status.button import Button, PressTracker
+    from .status.demo import DemoSource
+    from .status.director import Director, run
+    from .status.pages import rotation
+    from .status.siren import Siren
+    from .status.ui import UI
+
+    ui = UI()
+    source = DemoSource()
+    logo = None if args.no_logo else scenes.SCENES["logo"](panel)
+    director = Director(ui, source.state, rotation(ui, args.credits_speed),
+                        page_time=args.page_time, slide=args.slide,
+                        easing=EASINGS[args.easing],
+                        siren=Siren(1 - args.siren, 1 + args.siren, args.siren_period,
+                                    args.siren_shape),
+                        tracker=PressTracker(args.short_press, args.long_press), logo=logo)
+    button = None
+    if args.button is not None:
+        try:
+            button = Button(args.button, args.gpiochip)
+        except RuntimeError as e:
+            print(e, file=sys.stderr)
+            return 1
+        print(f"Button on GPIO{args.button}: a short press shows the next page, a hold of "
+              f"{args.long_press:g} s switches the alarm off.", flush=True)
+    commands = keyboard(source) if sys.stdin.isatty() else None
+    if commands:
+        print("Keys (+ Enter): Enter = short press, a = long hold, e = error on/off, "
+              "w = warning on/off.", flush=True)
+    try:
+        run(lcd, panel, director, button=button, commands=commands, report=args.report,
+            log=lambda line: print(line, flush=True))
+    finally:
+        if button:
+            button.close()
+    return 0
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or (argv[0] not in COMMANDS and argv[0] not in ("-h", "--help")):
@@ -170,21 +293,33 @@ def main(argv=None):
                                     gifs=args.gif, gif_length=args.gif_length,
                                     duration=args.duration, blink=args.blink,
                                     now=lambda: datetime(2026, 10, 15, 12, 34, 56))
+        if args.status:
+            from .status import shots
+            written += shots.write(args.out, panel, args.pitch)
         print(f"{len(written)} screenshots written to {args.out}/")
         return 0
 
+    if args.command == "status" and not args.demo:
+        print("The server's sources are not there yet (BS3D-LCD#4): run it with --demo.",
+              file=sys.stderr)
+        return 2
     try:
         lcd = open_device(args)
     except RuntimeError as e:
         print(e, file=sys.stderr)
         return 1
     try:
+        if args.command == "status":
+            return run_status(lcd, panel, args)
         if args.command == "sweep":
             from .calibrate import run_sweep
             run_sweep(lcd, panel, args.what, args.contrast, args.ratio, args.step, args.hold)
+        elif args.command == "compare" and args.what in ("slide", "siren", "credits"):
+            from .status.compare import run_compare
+            run_compare(lcd, panel, args.what, args.values, args.hold)
         elif args.command == "compare":
             from .calibrate import run_compare
-            run_compare(lcd, panel, args.what, args.values, args.hold)
+            run_compare(lcd, panel, args.what, args.values, args.hold or 6.0)
         else:
             run_scenes(lcd, scenes.build(args.scenes, panel, duration=args.duration,
                                          fps=args.fps, blink=args.blink),

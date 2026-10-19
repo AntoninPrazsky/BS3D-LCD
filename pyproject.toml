@@ -28,4 +28,4 @@ version = { attr = "bs3d_lcd.__version__" }
 include = ["bs3d_lcd*"]
 
 [tool.setuptools.package-data]
-bs3d_lcd = ["assets/*.png"]
+bs3d_lcd = ["assets/*.png", "assets/fonts/*.bdf"]

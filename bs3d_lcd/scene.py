@@ -44,9 +44,12 @@ class Scene:
     :param shots: ``(suffix, t)`` moments for screenshots, the main one first.
     :param dithered: frames are greyscale dithered over time, so a screenshot
         averages a whole dithering cycle; False for plain 1-bit scenes.
+    :param gray: ``gray(t)`` -> the greyscale picture before dithering, for
+        scenes that the status display pushes out like a page (the logo).
     """
 
-    def __init__(self, name, about, render, max_fps, level=None, shots=None, dithered=True):
+    def __init__(self, name, about, render, max_fps, level=None, shots=None, dithered=True,
+                 gray=None):
         self.name = name
         self.about = about
         self.render = render
@@ -54,6 +57,7 @@ class Scene:
         self.level = level
         self.shots = shots or (("", 2.0),)
         self.dithered = dithered
+        self.gray = gray
 
 
 def still(panel, gray):
