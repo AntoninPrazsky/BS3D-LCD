@@ -340,15 +340,42 @@ class RecoveredPage(Page):
         return image
 
 
-def stopped(ui, wall):
-    """What the panel keeps showing after a clean stop (#6): plain black and white,
-    since nothing dithers it any more."""
-    image = page(WIDTH, 64)
-    ui.big.draw(image, WIDTH // 2, 12, "STOPPED", align="center")
-    ui.body.draw(image, WIDTH // 2, 34, time.strftime("%d.%m. %H:%M", time.localtime(wall)),
-                 align="center")
-    ui.tiny.draw(image, WIDTH // 2, 50, "the status display is off", align="center")
-    return image.point(lambda v: 255 if v >= 128 else 0).convert("1")
+# Every other pixel, as a checkerboard: what stays of the last picture after a stop.
+CHECKER = Image.new("1", (WIDTH, 64))
+CHECKER.putdata([255 if (x + y) % 2 == 0 else 0 for y in range(64) for x in range(WIDTH)])
+
+
+def stopped(ui, wall, last=None, banner=True):
+    """What the panel keeps showing after a clean stop (#6).
+
+    Nothing drives the panel any more, so it is plain black and white: no
+    greys, no blinking. The last picture stays, thinned out to every other
+    pixel, under a STOPPED banner with the date and time; without a last
+    picture, the banner alone.
+    """
+    when = time.strftime("%d.%m. %H:%M", time.localtime(wall))
+    if last is None:
+        image = page(WIDTH, 64)
+        ui.big.draw(image, WIDTH // 2, 12, "STOPPED", align="center")
+        ui.body.draw(image, WIDTH // 2, 34, when, align="center")
+        ui.tiny.draw(image, WIDTH // 2, 50, "the status display is off", align="center")
+        return image.point(lambda v: 255 if v >= 128 else 0).convert("1")
+
+    ink = last.point(lambda v: 255 if v >= 64 else 0).convert("1")
+    # Strokes one pixel wide would fall apart into dots: widen them first, so
+    # every other pixel of them still reads as a letter.
+    ink = ImageChops.logical_or(ink, ImageChops.offset(ink, 1, 0))
+    image = ImageChops.logical_and(ink, CHECKER).convert("L")
+    if banner:
+        width = max(ui.big.width("STOPPED"), ui.body.width(when)) + 14
+        height = 4 + ui.big.cap + 5 + ui.body.cap + 5
+        x, y = (WIDTH - width) // 2, (64 - height) // 2
+        image.paste(0, (x - 2, y - 2, x + width + 2, y + height + 2))
+        image.paste(255, (x, y, x + width, y + height))
+        image.paste(0, (x + 1, y + 1, x + width - 1, y + height - 1))
+        ui.big.draw(image, WIDTH // 2, y + 4, "STOPPED", align="center")
+        ui.body.draw(image, WIDTH // 2, y + 4 + ui.big.cap + 5, when, align="center")
+    return image.convert("1")
 
 
 def rotation(ui, credits_speed=8.0):

@@ -242,6 +242,11 @@ class MonitorTest(unittest.TestCase):
         alert = next(a for a in self.tick().alerts if a.key == "temp")
         self.assertEqual((alert.severity, alert.title), (ERROR, "TOO HOT"))
 
+    def test_no_throttling_reading_is_a_warning(self):
+        self.box = healthy_box(throttled=None)
+        self.assertNotIn("source-throttled", self.keys(self.run_for(170)))
+        self.assertEqual(self.keys(self.run_for(20)).get("source-throttled"), WARNING)
+
     def test_a_source_that_fails_or_goes_quiet(self):
         self.run_for(10)
         for _ in range(3):

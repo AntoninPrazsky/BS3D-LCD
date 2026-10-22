@@ -199,6 +199,11 @@ class Monitor:
                 title = f"{name} FULL" if severity == ERROR else f"{name} LOW"
                 alert(key, severity, title, f"{free / GB:.1f} GB free ({percent:.0f} %)", began)
 
+        # Without vcgencmd (the video group) under-voltage would go unseen.
+        began = self.held("source-throttled", box["throttled"] is None, 180.0, now)
+        if began:
+            alert("source-throttled", WARNING, "SOURCE FAILING",
+                  "vcgencmd get_throttled: no answer", began)
         bits = box["throttled"] or 0
         began = self.held("under-voltage", bool(bits & UNDER_VOLTAGE), 10.0, now)
         if began:

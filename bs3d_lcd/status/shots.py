@@ -15,7 +15,8 @@ from .. import screenshots
 from . import strip
 from .demo import ALERTS, DemoSource
 from .director import Director
-from .pages import ActivityPage, AlertPage, BoxPage, ServerPage, TopPlayersPage, WarningsPage
+from .pages import (ActivityPage, AlertPage, BoxPage, ServerPage, TopPlayersPage, WarningsPage,
+                    stopped)
 from .siren import Siren
 from .state import Alert, State
 from .ui import UI
@@ -61,6 +62,7 @@ def shots(ui):
         ("box", screen(ui, calm, BoxPage(ui), 1.0, 3, 4)),
         ("warnings", screen(ui, warned, WarningsPage(ui), 1.0, 1, 5)),
         ("alert", screen(ui, failing, AlertPage(ui), 1.0, -1, 5)),
+        ("stopped", stopped(ui, WALL, screen(ui, calm, ServerPage(ui), 1.0, 0, 5)).convert("L")),
     ]
 
 

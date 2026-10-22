@@ -92,6 +92,7 @@ class Director:
         self.started = None
         self._state, self._state_at = None, None
         self._strip_key, self._strip_image = None, None
+        self.last_image = None      # the last picture composed, for STOPPED to go over
 
     # Input
 
@@ -149,6 +150,11 @@ class Director:
 
     def frame(self, now):
         """The picture (mode "L", 255 = darkest) and the V0 level at ``now``."""
+        image, level = self._frame(now)
+        self.last_image = image
+        return image, level
+
+    def _frame(self, now):
         if self.started is None:
             self.started = now
             if self.logo:

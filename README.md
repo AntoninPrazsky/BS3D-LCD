@@ -51,7 +51,7 @@ Pages take turns under a strip that always shows whether the server is online an
 | <img src="docs/screenshots/status-server.png" alt="server page"><br>Server: online, uptime, tunnel, last score | <img src="docs/screenshots/status-activity.png" alt="activity page"><br>Activity: submissions per hour, the current hour grey |
 | <img src="docs/screenshots/status-top.png" alt="top players page"><br>Top players, which then rolls like film credits | <img src="docs/screenshots/status-top-roll.png" alt="top players rolling"><br>…with the nicknames as the game shows them |
 | <img src="docs/screenshots/status-box.png" alt="the Pi page"><br>The Pi: temperature, fan, load, space, backup | <img src="docs/screenshots/status-warnings.png" alt="warnings page"><br>Warnings, with how long each has stood |
-| <img src="docs/screenshots/status-alert.png" alt="alert page"><br>An error: what, since when; the panel pulses | |
+| <img src="docs/screenshots/status-alert.png" alt="alert page"><br>An error: what, since when; the panel pulses | <img src="docs/screenshots/status-stopped.png" alt="stopped"><br>Stopped: over the last picture, which stays |
 | <img src="docs/screenshots/status-push.gif" alt="the push between pages"><br>The push between two pages | <img src="docs/screenshots/status-siren.gif" alt="the siren"><br>The siren |
 
 ### Greyscale on a 1-bit panel
@@ -176,7 +176,7 @@ sudo deploy/uninstall.sh            # remove it; /etc/bs3d-lcd stays
 
 - **At boot** the logo comes up without waiting for the network, then the pages, which say STARTING until the first readings arrive.
 - **A frozen panel never passes for a working one.** The render loop pats systemd's watchdog; if it stalls for 10 s, systemd restarts the service, which sets the panel up afresh. The blinking colon of the clock shows it too.
-- **A clean stop** (`systemctl stop`, an update, a shutdown) fades out and leaves STOPPED with the time on the panel, so a stopped display says so instead of keeping old numbers.
+- **A clean stop** (`systemctl stop`, an update, a shutdown) leaves STOPPED with the date and time over the last picture, so a stopped display says so instead of keeping old numbers that look current. With nothing driving the panel any more there can be no greys and no blinking, so the last picture stays thinned out to every other pixel, and the banner blinks three times while the display is still stopping.
 
 ### Screenshots
 

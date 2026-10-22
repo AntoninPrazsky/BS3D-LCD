@@ -304,11 +304,12 @@ def run_status(lcd, panel, args, settings=None):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, terminate)
     try:
+        # The demo fades out; the display of the server ends with STOPPED instead.
         run(lcd, panel, director, button=button, commands=commands, report=args.report,
-            log=lambda line: print(line, flush=True))
+            fade=0.4 if demo else 0, log=lambda line: print(line, flush=True))
     except KeyboardInterrupt:
         if not demo:
-            show_stopped(lcd, ui)
+            show_stopped(lcd, ui, director.last_image)
         raise
     finally:
         if button:
@@ -319,14 +320,27 @@ def run_status(lcd, panel, args, settings=None):
     return 0
 
 
-def show_stopped(lcd, ui):
-    """Leave STOPPED and the time on the panel, so a stopped display says so (#6)."""
+def show_stopped(lcd, ui, last=None):
+    """Leave STOPPED and the time on the panel, so a stopped display says so (#6).
+
+    It goes over the last picture, thinned out to every other pixel, and
+    blinks three times while there is still someone to blink it; then it
+    stays, still, for as long as the panel has power.
+    """
     from .status import systemd
     from .status.pages import stopped
 
     systemd.notify("STOPPING=1")
-    lcd.display(stopped(ui, time.time()))
-    lcd.fade(1.0, 0.3)
+    now = time.time()
+    banner, bare = stopped(ui, now, last), stopped(ui, now, last, banner=False)
+    lcd.set_level(1.0)
+    if last is not None:
+        for _ in range(3):
+            lcd.display(banner)
+            time.sleep(0.35)
+            lcd.display(bare)
+            time.sleep(0.25)
+    lcd.display(banner)
     lcd.persist = True
     print("Stopped; the panel says so.", flush=True)
 

@@ -140,6 +140,21 @@ class PagesTest(unittest.TestCase):
             column = loop.crop((x, 0, x + 1, loop.height))
             self.assertIsNone(column.getbbox())
 
+    def test_stopped_goes_over_the_last_picture(self):
+        from bs3d_lcd.status.pages import CHECKER, stopped
+        state = states()["busy"]
+        last = shots.screen(UI_, state, ServerPage(UI_), 1.0)
+        bare = stopped(UI_, state.now, last, banner=False)
+        banner = stopped(UI_, state.now, last)
+        self.assertEqual((bare.mode, bare.size), ("1", (128, 64)))
+        # What stays of the last picture is never more than every other pixel...
+        from PIL import ImageChops
+        self.assertIsNone(ImageChops.logical_and(bare, ImageChops.invert(CHECKER)).getbbox())
+        self.assertIsNotNone(bare.getbbox())
+        # ...and the banner covers the middle.
+        self.assertNotEqual(bare.tobytes(), banner.tobytes())
+        self.assertEqual(stopped(UI_, state.now).mode, "1")
+
     def test_stale_play_statistics_are_grey(self):
         s = states()
         fresh = ActivityPage(UI_).render(s["busy"], 1.0)
