@@ -1,8 +1,12 @@
 """The conditions of #4: each alerts after its hold and not before, and clears again."""
 
 import json
+import os
+import tempfile
 import unittest
+from datetime import datetime, timezone
 
+from bs3d_lcd.status import snapshot
 from bs3d_lcd.status.config import Config, load
 from bs3d_lcd.status.monitor import Monitor
 from bs3d_lcd.status.sources import LogEvent, Reading, Store, describe, parse_journal
@@ -28,7 +32,9 @@ def healthy_box(**changes):
     return box
 
 
-class MonitorTest(unittest.TestCase):
+class MonitorCase(unittest.TestCase):
+    """A monitor over a store the test fills, on a clock the test moves."""
+
     def setUp(self):
         self.clock = Clock()
         self.store = Store(clock=self.clock)
@@ -77,6 +83,7 @@ class MonitorTest(unittest.TestCase):
     def keys(self, state):
         return {a.key: a.severity for a in state.alerts}
 
+class MonitorTest(MonitorCase):
     def test_all_well(self):
         state = self.run_for(30)
         self.assertEqual(state.alerts, ())
@@ -271,6 +278,124 @@ class MonitorTest(unittest.TestCase):
         self.service["ActiveState"] = "failed"
         state = self.run_for(30)
         self.assertEqual(state.alerts[0].severity, ERROR)
+
+
+def iso(t):
+    """A moment as BS3D-API writes it: ISO 8601 with seven decimals."""
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f0+00:00")
+
+
+def status(at, refusals=None, offbox=None, offsite=None):
+    """A status snapshot as BS3D-API's admin status-feed writes it (its #13)."""
+    return {
+        "format": 1, "written_at": iso(at),
+        "service": {"version": "0.1.27+abc", "schema": 4, "expected_schema": 4, "db_bytes": 184320},
+        "totals": {"players": 4, "clears": 102, "attempts": 23, "boards": 176, "boards_with_clear": 61,
+                   "notes": 3},
+        "today": {"day": "2026-10-22", "zone": "Europe/Prague", "clears": 5, "attempts": 2,
+                  "new_players": 1, "active_players": 3, "seconds_played": 912.5,
+                  "refusals": {"rate-limited": 1}},
+        "refusals_last_hour": refusals or {},
+        "hours": [0] * 23 + [4],
+        "last_submission_at": iso(at - 60),
+        "latest": [{"level": "Pagoda", "player": "Ann", "stars": 3, "score": 39707, "at": iso(at - 60)}],
+        "top": {"rules": 1, "month": "2026-10",
+                "this_month": [{"rank": 1, "name": "Ann", "levels": 2, "stars": 7, "score": 350}],
+                "all_time": [{"rank": 1, "name": "Ann", "levels": 3, "stars": 9, "score": 500},
+                             {"rank": 2, "name": "Bob", "levels": 1, "stars": 3, "score": 300}]},
+        "backups": {"offbox": offbox, "offsite": offsite},
+        "play": {"starts": 10, "clears": 4, "seconds": 600.0},
+    }
+
+
+class SnapshotTest(MonitorCase):
+    """BS3D-API's status snapshot (its #13): the play pages' data, and what it warns about."""
+
+    def setUp(self):
+        super().setUp()
+        self.snapshot = status(T0)
+
+    def tick(self, seconds=0.0):
+        if self.snapshot is not None:
+            self.store.ok("snapshot", self.snapshot)
+        else:
+            self.store.fail("snapshot", "no such file or directory")
+        return super().tick(seconds)
+
+    def test_the_play_comes_from_the_snapshot(self):
+        play = self.tick().play
+        self.assertEqual((play.clears_today, play.attempts_today, play.players_today,
+                          play.new_players_today, play.seconds_today), (5, 2, 3, 1, 912.5))
+        self.assertEqual((play.players, play.clears, play.boards, play.boards_cleared, play.notes),
+                         (4, 102, 176, 61, 3))
+        self.assertEqual(play.hours[-1], 4)
+        self.assertAlmostEqual(play.at, T0, places=3)
+        self.assertAlmostEqual(play.last_score_at, T0 - 60, places=3)
+        self.assertEqual([(p.rank, p.name, p.score) for p in play.top_all], [(1, "Ann", 500), (2, "Bob", 300)])
+        self.assertEqual((play.latest[0].level, play.latest[0].player, play.latest[0].stars),
+                         ("Pagoda", "Ann", 3))
+
+    def test_old_statistics_are_a_warning_while_the_service_runs(self):
+        self.assertNotIn("stats", self.keys(self.run_for(110)))
+        state = self.run_for(20)
+        alert = next(a for a in state.alerts if a.key == "stats")
+        self.assertEqual((alert.severity, alert.title), (WARNING, "STATS OLD"))
+        self.service["ActiveState"] = "failed"
+        self.assertNotIn("stats", self.keys(self.tick()))     # API DOWN says it
+
+    def test_no_snapshot_is_a_warning_after_two_minutes(self):
+        self.snapshot = None
+        state = self.run_for(110)
+        self.assertNotIn("stats", self.keys(state))
+        self.assertIsNone(state.play)
+        alert = next(a for a in self.run_for(20).alerts if a.key == "stats")
+        self.assertEqual((alert.title, alert.detail), ("NO STATS", "snapshot: no such file or directory"))
+        self.assertNotIn("source-snapshot", self.keys(self.tick()))
+
+    def test_refusals(self):
+        for refusals, expected in (({"rate-limited": 5}, False), ({"bad-version": 1}, True),
+                                   ({"unknown-board": 2, "rate-limited": 1}, True),
+                                   ({"over-ceiling": 2}, False), ({"over-ceiling": 2, "wrong-token": 1}, True),
+                                   ({"rate-limited": 31}, True)):
+            with self.subTest(refusals):
+                self.snapshot = status(self.clock.t, refusals)
+                self.assertEqual("refusals" in self.keys(self.tick()), expected)
+        alert = next(a for a in self.tick().alerts if a.key == "refusals")
+        self.assertEqual(alert.detail, "31 rate-limited in 1 h")
+
+    def test_a_failed_copy_is_an_error_and_an_old_one_a_warning(self):
+        failed = {"result": "failed", "attempt": iso(T0 - 600), "ok": iso(T0 - 86000), "every": 1}
+        self.snapshot = status(T0, offbox=failed)
+        alert = next(a for a in self.tick().alerts if a.key == "copy-offbox")
+        self.assertEqual((alert.severity, alert.title, alert.detail[:12]), (ERROR, "COPY FAILED", "off the box,"))
+        # Off the site every two days: 49 h is on time, 51 h is late
+        on_time = {"result": "ok", "attempt": iso(T0 - 49 * 3600), "ok": iso(T0 - 49 * 3600), "every": 2}
+        self.snapshot = status(T0, offsite=on_time)
+        self.assertNotIn("copy-offsite-old", self.keys(self.tick()))
+        late = dict(on_time, ok=iso(T0 - 51 * 3600))
+        self.snapshot = status(T0, offsite=late)
+        self.assertEqual(self.keys(self.tick()).get("copy-offsite-old"), WARNING)
+        self.assertEqual(self.keys(self.tick()).get("copy-offsite-old"), WARNING)
+
+    def test_the_box_shows_the_copy_off_the_box(self):
+        good = {"result": "ok", "attempt": iso(T0 - 3600), "ok": iso(T0 - 3600), "every": 1}
+        self.snapshot = status(T0, offbox=good)
+        self.assertAlmostEqual(self.tick().box.backup_at, T0 - 3600, places=3)
+
+    def test_a_copy_not_set_up_says_nothing(self):
+        self.snapshot = status(T0, offsite={"result": "none", "attempt": None, "ok": None, "every": 2})
+        keys = self.keys(self.tick())
+        self.assertFalse(any(k.startswith("copy-") for k in keys))
+
+    def test_the_file_is_read_and_its_format_checked(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(status(T0), f)
+        self.addCleanup(os.unlink, f.name)
+        self.assertEqual(snapshot.read(f.name)["format"], 1)
+        with open(f.name, "w") as g:
+            json.dump(dict(status(T0), format=2), g)
+        with self.assertRaises(ValueError):
+            snapshot.read(f.name)
 
 
 class JournalTest(unittest.TestCase):

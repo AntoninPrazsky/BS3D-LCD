@@ -1,6 +1,6 @@
 # BS3D-LCD
 
-A 2.4" ST7565 128×64 monochrome LCD on a Raspberry Pi 5, as the front-panel display of the [BS3D](https://github.com/AntoninPrazsky/BS3D) game server (the Pi that runs [BS3D-API](https://github.com/AntoninPrazsky/BS3D-API)). It greets you with the game's animated startup logo, and is becoming the server's status display: whether the server is online, how the playing goes, and a siren when something fails ([the plan](https://github.com/AntoninPrazsky/BS3D-LCD/issues/1); the play statistics still run on made-up data).
+A 2.4" ST7565 128×64 monochrome LCD on a Raspberry Pi 5, as the front-panel display of the [BS3D](https://github.com/AntoninPrazsky/BS3D) game server (the Pi that runs [BS3D-API](https://github.com/AntoninPrazsky/BS3D-API)). It greets you with the game's animated startup logo, and is becoming the server's status display: whether the server is online, how the playing goes, and a siren when something fails ([the plan](https://github.com/AntoninPrazsky/BS3D-LCD/issues/1)).
 
 <p align="center">
   <img src="docs/screenshots/logo.gif" alt="The animated BS3D startup logo on the LCD (simulated)" width="710"><br>
@@ -48,9 +48,11 @@ Pages take turns under a strip that always shows whether the server is online an
 
 | | |
 |:---:|:---:|
-| <img src="docs/screenshots/status-server.png" alt="server page"><br>Server: online, uptime, tunnel, last score | <img src="docs/screenshots/status-activity.png" alt="activity page"><br>Activity: submissions per hour, the current hour grey |
+| <img src="docs/screenshots/status-server.png" alt="server page"><br>Server: online, uptime, tunnel, last score | <img src="docs/screenshots/status-today.png" alt="today page"><br>Today: clears, unfinished, players, time played |
+| <img src="docs/screenshots/status-latest.png" alt="latest clears page"><br>Latest clears: who, which level, how long ago | <img src="docs/screenshots/status-activity.png" alt="activity page"><br>Activity: submissions per hour, the current hour grey |
 | <img src="docs/screenshots/status-top.png" alt="top players page"><br>Top players, which then rolls like film credits | <img src="docs/screenshots/status-top-roll.png" alt="top players rolling"><br>…with the nicknames as the game shows them |
-| <img src="docs/screenshots/status-box.png" alt="the Pi page"><br>The Pi: temperature, fan, load, space, backup | <img src="docs/screenshots/status-warnings.png" alt="warnings page"><br>Warnings, with how long each has stood |
+| <img src="docs/screenshots/status-all.png" alt="all time page"><br>All time: players, clears, boards cleared, notes | <img src="docs/screenshots/status-box.png" alt="the Pi page"><br>The Pi: temperature, fan, load, space, backup |
+| <img src="docs/screenshots/status-warnings.png" alt="warnings page"><br>Warnings, with how long each has stood | |
 | <img src="docs/screenshots/status-alert.png" alt="alert page"><br>An error: what, since when; the panel pulses | <img src="docs/screenshots/status-stopped.png" alt="stopped"><br>Stopped: over the last picture, which stays |
 | <img src="docs/screenshots/status-push.gif" alt="the push between pages"><br>The push between two pages | <img src="docs/screenshots/status-siren.gif" alt="the siren"><br>The siren |
 
@@ -151,8 +153,9 @@ Values found on the OPEN-SMART panel, all of them the defaults:
 
 The logo plays first and is pushed out by the first page.
 
-- **What it reads**, each in its own thread and never the service's database: the `bs3d-api` unit (`systemctl show`), its `GET /v1/health`, the `cloudflared` unit and its readiness, the release the `/opt/bs3d-api/current` link points to, the nightly backup's unit and timer, the service's journal (`journalctl -f`, so the user needs the `adm` or `systemd-journal` group), the Pi's temperature, throttling, fan, load, memory and free space, and optionally the same health check through Cloudflare. The play statistics need [BS3D-API#13](https://github.com/AntoninPrazsky/BS3D-API/issues/13); until then those pages are left out.
-- **When it alerts:** the table of conditions is in [#4](https://github.com/AntoninPrazsky/BS3D-LCD/issues/4). Anything that makes the server unreachable sounds the siren: the service down for 20 s, its health failing three checks in a row, the tunnel down for a minute, or the check through Cloudflare failing three times. So do a failed backup, an error the service logs, a nearly full disk, under-voltage and over 85 °C. The rest are warnings.
+- **What it reads**, each in its own thread and never the service's database: the `bs3d-api` unit (`systemctl show`), its `GET /v1/health`, the `cloudflared` unit and its readiness, the release the `/opt/bs3d-api/current` link points to, the nightly backup's unit and timer, the service's journal (`journalctl -f`, so the user needs the `adm` or `systemd-journal` group), the Pi's temperature, throttling, fan, load, memory and free space, and optionally the same health check through Cloudflare. The play statistics come from BS3D-API's status snapshot ([BS3D-API#13](https://github.com/AntoninPrazsky/BS3D-API/issues/13)), `/run/bs3d-status/status.json`, which its `bs3d-api-status.service` rewrites every 15 s for the group `bs3d-status`: counts, today's play, the newest clears, the Top players and the backup records, never a hash or a hidden player. Without it the play pages are left out and the strip warns NO STATS.
+- **When it alerts:** the table of conditions is in [#4](https://github.com/AntoninPrazsky/BS3D-LCD/issues/4). Anything that makes the server unreachable sounds the siren: the service down for 20 s, its health failing three checks in a row, the tunnel down for a minute, or the check through Cloudflare failing three times. So do a failed backup or copy, an error the service logs, a nearly full disk, under-voltage and over 85 °C. The rest are warnings: an old copy, statistics older than 2 minutes, refusals that point at something to update (an unknown board, a game version, the notes' cap), at someone probing, or at too many.
+- **The pages:** Server, Warnings (when there are any), Today, Latest clears, Activity, Top players, All time and the Pi. A page with nothing to say is left out.
 - **Settings:** `--config PATH`, else `/etc/bs3d-lcd/config.toml`, else `~/.config/bs3d-lcd/config.toml`; [`deploy/config.example.toml`](deploy/config.example.toml) lists them all with their defaults. The public address for the check through Cloudflare goes only there.
 - **`--demo`** makes the numbers change as time goes on, a warning come and go, and every 5 minutes an error sound the siren for a minute.
 
@@ -172,7 +175,13 @@ sudo systemctl stop bs3d-lcd        # before running bs3d-lcd by hand: the servi
 sudo deploy/uninstall.sh            # remove it; /etc/bs3d-lcd stays
 ```
 
-`install.sh` puts the code in `/opt/bs3d-lcd` with its own venv, adds the system user `bs3d-lcd` (no home, no login) and installs [`deploy/bs3d-lcd.service`](deploy/bs3d-lcd.service), which runs the display as that user with only the `spi`, `gpio`, `video` and `systemd-journal` groups. The first install makes `/etc/bs3d-lcd/config.toml` from your `~/.config/bs3d-lcd/config.toml`, or from the example; later ones leave it alone. To update: `git pull`, then `sudo deploy/install.sh` again.
+For the play statistics, first install BS3D-API's status snapshot and let the display's user read it (BS3D-API 0.1.27 or later):
+
+```
+sudo /opt/bs3d-api/current/deploy/install-status.sh bs3d-lcd
+```
+
+`install.sh` puts the code in `/opt/bs3d-lcd` with its own venv, adds the system user `bs3d-lcd` (no home, no login; in the group `bs3d-status` when it exists) and installs [`deploy/bs3d-lcd.service`](deploy/bs3d-lcd.service), which runs the display as that user with only the `spi`, `gpio`, `video` and `systemd-journal` groups. The first install makes `/etc/bs3d-lcd/config.toml` from your `~/.config/bs3d-lcd/config.toml`, or from the example; later ones leave it alone. To update: `git pull`, then `sudo deploy/install.sh` again.
 
 - **At boot** the logo comes up without waiting for the network, then the pages, which say STARTING until the first readings arrive.
 - **A frozen panel never passes for a working one.** The render loop pats systemd's watchdog; if it stalls for 10 s, systemd restarts the service, which sets the panel up afresh. The blinking colon of the clock shows it too.

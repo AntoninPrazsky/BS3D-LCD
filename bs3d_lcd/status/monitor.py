@@ -10,6 +10,7 @@ condition began, which is also its identity for acknowledging (#3).
 
 import time
 
+from . import snapshot
 from .sources import EVERY
 from .state import ERROR, WARNING, Alert, Box, Server, State
 from .ui import fmt_age, fmt_span
@@ -108,7 +109,10 @@ class Monitor:
                   public.failing_since)
 
         self.log_alerts(alert, now)
-        backup_at = self.backup_alerts(alert, now)
+        data = self.fresh("snapshot", now)
+        play, records = (snapshot.play(data), snapshot.backups(data)) if data else (None, {})
+        self.snapshot_alerts(alert, data, play, now, active)
+        backup_at = self.backup_alerts(alert, now, records)
         box = self.fresh("box", now)
         if box:
             self.box_alerts(alert, box, now)
@@ -124,7 +128,7 @@ class Monitor:
             box_state = Box(at=self.store.get("box").at, backup_at=backup_at, **box)
         alerts.sort(key=lambda a: (a.severity != ERROR, a.since))
         self.log_changes(alerts, now)
-        return State(now=now, server=server, box=box_state, alerts=tuple(alerts))
+        return State(now=now, server=server, play=play, box=box_state, alerts=tuple(alerts))
 
     def log_changes(self, alerts, now):
         """Each alert into the log as it comes and goes: the journal keeps the history."""
@@ -164,8 +168,56 @@ class Monitor:
                 count = f"{len(matching)}x: " if len(matching) > 1 else ""
                 alert(key, severity, title, count + (last.detail or last.text), began)
 
-    def backup_alerts(self, alert, now):
-        """A failed nightly backup, or none for too long; returns when it last ran."""
+    def snapshot_alerts(self, alert, data, play, now, service_up):
+        """BS3D-API's status snapshot (its #13): missing or old while the service runs, and
+        the refusals it counts."""
+        c = self.config
+        reading = self.store.get("snapshot")
+        if play is None:
+            began = reading.failing_since if reading.fails else self.started
+            missing = service_up and now - began >= c.snapshot_age
+            began = self.held("stats", missing, 0, now, began)
+            if began:
+                alert("stats", WARNING, "NO STATS", f"snapshot: {reading.error or 'not read'}", began)
+        else:
+            old = service_up and now - play.at > c.snapshot_age
+            began = self.held("stats", old, 0, now, play.at + c.snapshot_age)
+            if began:
+                alert("stats", WARNING, "STATS OLD", f"written {fmt_age(now - play.at)} ago", began)
+
+        # Refusals: something on the server to update, someone probing, or just too many
+        hour = (data or {}).get("refusals_last_hour") or {}
+        update = sum(hour.get(r, 0) for r in ("unknown-board", "bad-version", "notes-full"))
+        probing = sum(hour.get(r, 0) for r in ("over-ceiling", "wrong-token"))
+        on = update > 0 or probing >= 3 or sum(hour.values()) > c.refusals_hour
+        began = self.held("refusals", on, 0, now)
+        if began:
+            most = sorted(hour.items(), key=lambda kv: (-kv[1], kv[0]))[:2]
+            alert("refusals", WARNING, "REFUSALS",
+                  ", ".join(f"{n} {reason}" for reason, n in most) + " in 1 h", began)
+
+    def copy_alerts(self, alert, records, now):
+        """The copies off the box and off the site, as deploy/backup.sh records them."""
+        for name, where in (("offbox", "off the box"), ("offsite", "off the site")):
+            if name not in records:
+                continue
+            result, attempt, ok, every = records[name]
+            if result == "none":
+                continue                    # not set up
+            if result == "failed":
+                at = time.strftime("%H:%M", time.localtime(attempt)) if attempt else "?"
+                alert(f"copy-{name}", ERROR, "COPY FAILED", f"{where}, at {at}", attempt or now)
+            # Its days between copies, and two hours for the timer and summer time
+            limit = every * 86400 + 7200
+            if ok and now - ok > limit:
+                alert(f"copy-{name}-old", WARNING, "COPY OLD", f"{where}: {fmt_age(now - ok)} ago",
+                      ok + limit)
+
+    def backup_alerts(self, alert, now, records=None):
+        """A failed nightly backup, or none for too long; returns when the last good copy was
+        made. With the snapshot's records the copies are watched one by one."""
+        records = records or {}
+        self.copy_alerts(alert, records, now)
         backup = self.fresh("backup", now) or {}
         exited = backup.get("ExecMainExitTimestamp")
         if exited and backup.get("Result") != "success":
@@ -176,6 +228,8 @@ class Monitor:
         # The service's own record is gone after a reboot; the timer's persists.
         last = exited if exited and backup.get("Result") == "success" else None
         last = last or timer.get("LastTriggerUSec")
+        if "offbox" in records and records["offbox"][2]:
+            return records["offbox"][2]     # the copy itself, watched above
         limit = self.config.backup_age * 3600
         if last and now - last > limit:
             alert("backup-old", WARNING, "BACKUP OLD", f"last one {fmt_age(now - last)} ago",
@@ -228,7 +282,7 @@ class Monitor:
     def source_alerts(self, alert, now, tunnel_down):
         """A source of the display that fails, or has gone quiet."""
         for name, every in EVERY.items():
-            if name in ("health", "public") or (name == "ready" and tunnel_down):
+            if name in ("health", "public", "snapshot") or (name == "ready" and tunnel_down):
                 continue
             reading = self.store.get(name)
             if reading.fails >= 3:

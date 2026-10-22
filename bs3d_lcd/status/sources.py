@@ -19,6 +19,7 @@ import urllib.request
 from dataclasses import dataclass, replace
 
 from .. import __version__
+from . import snapshot
 
 # Cloudflare turns away Python's own User-Agent (403).
 USER_AGENT = f"BS3D-LCD/{__version__} (status display)"
@@ -315,6 +316,7 @@ def start(config, store=None, stop=None):
                60.0, stop),
         Poller(store, "box", lambda: box(config.backup_mount), 10.0, stop),
         Journal(store, config.service, config.log_window * 60, stop),
+        Poller(store, "snapshot", lambda: snapshot.read(config.snapshot), 5.0, stop),
     ]
     if config.public_health:
         tls()                       # now, before the render loop runs
@@ -327,4 +329,4 @@ def start(config, store=None, stop=None):
 
 # How often each source reads, for telling a source that hangs.
 EVERY = {"service": 5.0, "health": 10.0, "tunnel": 10.0, "ready": 10.0, "release": 60.0,
-         "backup": 60.0, "backup-timer": 60.0, "box": 10.0, "public": 60.0}
+         "backup": 60.0, "backup-timer": 60.0, "box": 10.0, "public": 60.0, "snapshot": 5.0}

@@ -54,17 +54,40 @@ class Player:
 
 
 @dataclass(frozen=True)
+class Clear:
+    """One of the newest clears (BS3D-API#13)."""
+
+    level: str              # the level's name, as the ceiling tables give it
+    player: str
+    stars: int
+    score: int
+    at: float
+
+
+@dataclass(frozen=True)
 class Play:
     """The play statistics from the status snapshot (BS3D-API#13)."""
 
     at: float                           # when the snapshot was written
     hours: tuple = ()                   # submissions per hour, last 24, current one last
+    # Today: the Prague day, as the strip's clock
     clears_today: int = 0
-    players_today: int = 0
+    attempts_today: int = 0             # unfinished attempts
+    players_today: int = 0              # players who sent something
+    new_players_today: int = 0
+    seconds_today: float = 0.0
     last_score_at: float | None = None
+    latest: tuple = ()                  # Clear rows, newest first
     month: str = ""                     # "2026-10"
     top_month: tuple = ()               # Player rows
     top_all: tuple = ()
+    # All time
+    players: int = 0
+    clears: int = 0
+    attempts: int = 0
+    boards: int = 0                     # the boards the ceiling tables name
+    boards_cleared: int = 0
+    notes: int = 0
 
 
 @dataclass(frozen=True)

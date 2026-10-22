@@ -9,8 +9,9 @@ from PIL import Image
 from bs3d_lcd.font import Font, font_names
 from bs3d_lcd.status import shots, strip
 from bs3d_lcd.status.demo import ALERTS, DemoSource
-from bs3d_lcd.status.pages import (HEIGHT, WIDTH, ActivityPage, AlertPage, BoxPage,
-                                   RecoveredPage, ServerPage, TopPlayersPage, WarningsPage)
+from bs3d_lcd.status.pages import (HEIGHT, WIDTH, ActivityPage, AlertPage, AllTimePage, BoxPage,
+                                   LatestPage, RecoveredPage, ServerPage, TodayPage, TopPlayersPage,
+                                   WarningsPage)
 from bs3d_lcd.status.state import Alert, Play, Player, Server, State
 from bs3d_lcd.status.ui import UI, fmt_age, fmt_int, fmt_span
 
@@ -88,8 +89,8 @@ def states():
 
 
 class PagesTest(unittest.TestCase):
-    PAGES = (ServerPage(UI_), ActivityPage(UI_), TopPlayersPage(UI_), WarningsPage(UI_),
-             BoxPage(UI_),
+    PAGES = (ServerPage(UI_), TodayPage(UI_), LatestPage(UI_), ActivityPage(UI_), TopPlayersPage(UI_),
+             AllTimePage(UI_), WarningsPage(UI_), BoxPage(UI_),
              AlertPage(UI_), RecoveredPage(UI_, ("API DOWN", "TUNNEL DOWN"), 754))
 
     def test_every_page_renders_at_its_size(self):
@@ -115,6 +116,8 @@ class PagesTest(unittest.TestCase):
         self.assertTrue(WarningsPage(UI_).skip(s["busy"]))
         self.assertFalse(WarningsPage(UI_).skip(s["alerts"]))
         self.assertTrue(ActivityPage(UI_).skip(s["unknown"]))
+        self.assertTrue(LatestPage(UI_).skip(s["empty"]))
+        self.assertFalse(TodayPage(UI_).skip(s["empty"]))
         self.assertFalse(ServerPage(UI_).skip(s["unknown"]))
 
     def test_the_roll_leaves_as_it_came_in(self):
@@ -131,6 +134,19 @@ class PagesTest(unittest.TestCase):
         loop, lap = page._build(state)
         self.assertEqual(loop.crop((0, 0, WIDTH, HEIGHT)).tobytes(),
                          loop.crop((0, lap, WIDTH, lap + HEIGHT)).tobytes())
+
+    def test_the_latest_clears_fit_with_the_longest_nicknames(self):
+        state = states()["longest"]
+        clears = tuple(replace(c, player="ŘŽŠÁÉŮÝÍĚĎŤŇÓÚŮŘ", score=9_999_999) for c in state.play.latest)
+        state = replace(state, play=replace(state.play, latest=clears))
+        page = LatestPage(UI_)
+        image = page.render(state, 1.0)
+        self.assertEqual(image.size, (WIDTH, HEIGHT))
+        # The third clear's second line, descenders included, ends on the page's last row at most
+        last = 2 + (page.COUNT - 1) * page.PITCH + 10
+        self.assertLessEqual(last + UI_.tiny.cap + UI_.tiny.descent, HEIGHT)
+        # A long nickname takes a narrower font rather than running into the stars
+        self.assertIsNone(image.crop((WIDTH - 22, 2, WIDTH - 21, 9)).getbbox())
 
     def test_a_nickname_of_16_letters_with_marks_fits(self):
         page, state = TopPlayersPage(UI_, fade=False), states()["longest"]

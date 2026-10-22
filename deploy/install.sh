@@ -5,7 +5,8 @@
 #
 # - The code goes to /opt/bs3d-lcd, in its own venv, from this checkout.
 # - The service runs as the system user bs3d-lcd: no home, no login, and only
-#   the groups the unit names (spi, gpio, video, systemd-journal).
+#   the groups the unit names (spi, gpio, video, systemd-journal), plus
+#   bs3d-status, which reads BS3D-API's status snapshot, when that exists.
 # - The settings are /etc/bs3d-lcd/config.toml. The first install makes it
 #   from your ~/.config/bs3d-lcd/config.toml, or from the example; later
 #   installs leave it alone.
@@ -26,6 +27,11 @@ NAME=bs3d-lcd
 if ! id "$NAME" >/dev/null 2>&1; then
     useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$NAME"
     echo "Added the system user $NAME."
+fi
+# BS3D-API's status snapshot, the play statistics (its #13), is for the group bs3d-status, which its
+# deploy/install-status.sh adds. The restart below picks the membership up.
+if getent group bs3d-status >/dev/null; then
+    usermod -a -G bs3d-status "$NAME"
 fi
 
 # Build from a copy, so that nothing in the checkout ends up owned by root.

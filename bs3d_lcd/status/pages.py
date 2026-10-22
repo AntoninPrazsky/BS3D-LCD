@@ -73,6 +73,87 @@ class ServerPage(Page):
         return image
 
 
+class TodayPage(Page):
+    """Today's play, the Prague day: clears, unfinished attempts, players, time played."""
+
+    name = "today"
+
+    def skip(self, state):
+        return state.play is None
+
+    def render(self, state, t):
+        ui, image, play = self.ui, page(WIDTH, HEIGHT), state.play
+        shade = _shade(play.at, state.now)
+        ui.bold.draw(image, 1, 1, "TODAY", fill=shade)
+        ui.body.draw(image, WIDTH - 1, 1, time.strftime("%d.%m.", time.localtime(state.now)),
+                     fill=shade, align="right")
+        played = fmt_span(play.seconds_today) if play.seconds_today else "--"
+        for i, (label, value) in enumerate((("clears", fmt_int(play.clears_today)),
+                                            ("unfinished", fmt_int(play.attempts_today)),
+                                            ("players", fmt_int(play.players_today)),
+                                            ("new players", fmt_int(play.new_players_today)),
+                                            ("time played", played))):
+            row(image, ui.body, 12 + 9 * i, label, value, value_fill=shade)
+        return image
+
+
+class LatestPage(Page):
+    """The newest clears: who, which level, the stars and the score, how long ago.
+
+    Three of them fill the page; a title would leave room for two.
+    """
+
+    name = "latest"
+    COUNT = 3
+    PITCH = 18
+
+    def skip(self, state):
+        return not (state.play and state.play.latest)
+
+    def render(self, state, t):
+        ui, image, play = self.ui, page(WIDTH, HEIGHT), state.play
+        shade = _shade(play.at, state.now)
+        y = 2
+        for clear in play.latest[:self.COUNT]:
+            stars = ui.tiny.width(str(clear.stars)) + 2 + icon("star").width
+            room = WIDTH - 2 - stars - 4
+            name = fit((ui.body, ui.tiny), clear.player, room)
+            name.draw(image, 1, y + ui.body.cap - name.cap, clear.player, fill=shade)
+            x = WIDTH - 1 - stars
+            x += ui.tiny.draw(image, x, y + 1, str(clear.stars), fill=shade) + 2
+            draw_icon(image, x, y + 1, "star", fill=shade)
+            ago = fmt_age(state.now - clear.at)
+            detail = f"{clear.level}  {fmt_int(clear.score)}"
+            ui.tiny.draw(image, 1, y + 10, detail, fill=shade)
+            ui.tiny.draw(image, WIDTH - 1, y + 10, ago + " ago", fill=GREY, align="right")
+            y += self.PITCH
+        return image
+
+
+class AllTimePage(Page):
+    """Everything so far: players, clears, unfinished attempts, boards cleared, notes."""
+
+    name = "all"
+
+    def skip(self, state):
+        return state.play is None
+
+    def render(self, state, t):
+        ui, image, play = self.ui, page(WIDTH, HEIGHT), state.play
+        shade = _shade(play.at, state.now)
+        ui.bold.draw(image, 1, 1, "ALL TIME", fill=shade)
+        # The boards a visible player has cleared, of those the ceiling tables name
+        boards = f"{fmt_int(play.boards_cleared)} of {fmt_int(play.boards)}" if play.boards else \
+            fmt_int(play.boards_cleared)
+        for i, (label, value) in enumerate((("players", fmt_int(play.players)),
+                                            ("clears", fmt_int(play.clears)),
+                                            ("unfinished", fmt_int(play.attempts)),
+                                            ("boards", boards),
+                                            ("notes", fmt_int(play.notes)))):
+            row(image, ui.body, 12 + 9 * i, label, value, value_fill=shade)
+        return image
+
+
 class ActivityPage(Page):
     """Submissions per hour over the last 24 hours, as bars."""
 
@@ -380,5 +461,5 @@ def stopped(ui, wall, last=None, banner=True):
 
 def rotation(ui, credits_speed=8.0):
     """The pages that take turns, in order (#5)."""
-    return [ServerPage(ui), WarningsPage(ui), ActivityPage(ui),
-            TopPlayersPage(ui, speed=credits_speed), BoxPage(ui)]
+    return [ServerPage(ui), WarningsPage(ui), TodayPage(ui), LatestPage(ui), ActivityPage(ui),
+            TopPlayersPage(ui, speed=credits_speed), AllTimePage(ui), BoxPage(ui)]

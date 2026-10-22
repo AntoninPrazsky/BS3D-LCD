@@ -10,6 +10,7 @@ health = "http://127.0.0.1:5000/v1/health"
 ready = "http://127.0.0.1:20241/ready"          # cloudflared --metrics 127.0.0.1:20241
 release = "/opt/bs3d-api/current"               # a link to the running release
 backup_mount = "/mnt/bs3d-backup"
+snapshot = "/run/bs3d-status/status.json"       # BS3D-API's status snapshot (its #13)
 # The same health check through Cloudflare, as the game sees it. Without it
 # the end-to-end check is left out. Kept out of the repository.
 # public_health = "https://scores.example.com/v1/health"
@@ -25,3 +26,5 @@ free_warning = 10       # % free on the disk or the backup card
 free_error = 3
 backup_age = 26         # hours since the last nightly backup
 log_window = 15         # minutes a logged error or warning stands
+snapshot_age = 120      # s: an older status snapshot is stale, and so are the play pages
+refusals_hour = 30      # refusals of any kind in an hour that are too many

@@ -10,7 +10,7 @@ import math
 import random
 import time
 
-from .state import ERROR, WARNING, Alert, Box, Play, Player, Server, State
+from .state import ERROR, WARNING, Alert, Box, Clear, Play, Player, Server, State
 
 NAMES = ("Kateřina", "Bublinka", "Jiří", "Šárka_7", "Ondra-K", "Łukasz", "Žaneta",
          "Ægir", "Tomáš", "Mia", "Ľubo", "Zdeněk", "Øyvind", "Bára", "Kuba 77", "Eliška",
@@ -100,10 +100,16 @@ class DemoSource:
         part = (wall % 3600) / 3600
         hours = hours[:-1] + (round(hours[-1] * part),)
         last = wall - (37 + 23 * math.sin(wall / 97) ** 2)
+        latest = tuple(Clear(level, player.name, stars, score, last - ago)
+                       for (level, stars, score, ago), player in zip(
+                           (("Pagoda", 3, 39_707, 0), ("Lean", 4, 43_834, 640), ("Pylon", 2, 28_464, 1900)),
+                           self.top_month[3:6]))
         play = Play(at=wall - (wall % 15), hours=hours, clears_today=sum(hours) // 3,
-                    players_today=11, last_score_at=last,
+                    attempts_today=sum(hours) // 9, players_today=11, new_players_today=2,
+                    seconds_today=sum(hours) * 47.0, last_score_at=last, latest=latest,
                     month=time.strftime("%Y-%m", time.localtime(wall)),
-                    top_month=self.top_month, top_all=self.top_all)
+                    top_month=self.top_month, top_all=self.top_all,
+                    players=137, clears=4_812, attempts=1_377, boards=176, boards_cleared=149, notes=23)
         box = Box(at=wall - (wall % 10), host="BS3DServer", uptime=wall - server.since + 600,
                   temp=48 + 3 * math.sin(wall / 300), throttled=0, fan=2860, load=0.42,
                   memory=0.31, disk_free=443_800_000_000, disk_share=0.88,

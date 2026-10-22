@@ -31,6 +31,7 @@ class Config:
     public_health: str | None = None                # the same health through Cloudflare
     release: str = "/opt/bs3d-api/current"          # a link to the running release
     backup_mount: str = "/mnt/bs3d-backup"
+    snapshot: str = "/run/bs3d-status/status.json"  # BS3D-API's status snapshot (#13)
 
     # [thresholds]
     service_hold: float = 20.0          # s down before it alerts: a deploy's restart does not
@@ -43,9 +44,11 @@ class Config:
     free_error: float = 3.0
     backup_age: float = 26.0            # hours since the last nightly backup
     log_window: float = 15.0            # minutes a logged error or warning stands
+    snapshot_age: float = 120.0         # s: an older status snapshot is stale
+    refusals_hour: int = 30             # refusals in an hour that are too many
 
     SECTIONS = {"sources": ("service", "tunnel", "backup", "health", "ready", "public_health",
-                            "release", "backup_mount")}
+                            "release", "backup_mount", "snapshot")}
 
 
 def find(path=None):
