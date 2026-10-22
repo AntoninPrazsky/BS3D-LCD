@@ -3,8 +3,10 @@ render screenshots."""
 
 import argparse
 import queue
+import signal
 import sys
 import threading
+import time
 from datetime import datetime
 
 from . import __doc__ as package_doc, scenes
@@ -272,7 +274,7 @@ def run_status(lcd, panel, args, settings=None):
         demo = None
         store, stop, threads = sources.start(config)
         journal = next(t for t in threads if isinstance(t, sources.Journal))
-        state = Monitor(config, store)
+        state = Monitor(config, store, log=lambda line: print(line, flush=True))
         print(f"Reading {config.service}, {config.tunnel} and {config.backup} "
               f"({path or 'built-in settings'}); the check through Cloudflare is "
               f"{'on' if config.public_health else 'off'}.", flush=True)
@@ -296,9 +298,18 @@ def run_status(lcd, panel, args, settings=None):
     if commands:
         print("Keys (+ Enter): Enter = short press, a = long hold"
               + (", e = error on/off, w = warning on/off." if demo else "."), flush=True)
+    # systemctl stop: the same clean end as Ctrl+C.
+    def terminate(signum, frame):
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, terminate)
     try:
         run(lcd, panel, director, button=button, commands=commands, report=args.report,
             log=lambda line: print(line, flush=True))
+    except KeyboardInterrupt:
+        if not demo:
+            show_stopped(lcd, ui)
+        raise
     finally:
         if button:
             button.close()
@@ -306,6 +317,18 @@ def run_status(lcd, panel, args, settings=None):
             stop.set()
             journal.close()
     return 0
+
+
+def show_stopped(lcd, ui):
+    """Leave STOPPED and the time on the panel, so a stopped display says so (#6)."""
+    from .status import systemd
+    from .status.pages import stopped
+
+    systemd.notify("STOPPING=1")
+    lcd.display(stopped(ui, time.time()))
+    lcd.fade(1.0, 0.3)
+    lcd.persist = True
+    print("Stopped; the panel says so.", flush=True)
 
 
 def main(argv=None):

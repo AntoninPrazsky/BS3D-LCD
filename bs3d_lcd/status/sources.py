@@ -287,7 +287,9 @@ class Journal(threading.Thread):
                 self.store.amend(last, detailed)
                 last = detailed
         code = self.process.wait()
-        if not self.stop.is_set():
+        # Killed by a signal: most likely the display is stopping with it. It
+        # starts again in a moment if not; only an exit of its own is a failure.
+        if not self.stop.is_set() and code >= 0:
             self.store.fail("journal", f"journalctl ended ({code})")
 
     def close(self):

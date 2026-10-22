@@ -49,7 +49,9 @@ class GpiodGPIO:
         except OSError as e:
             if e.errno == errno.EBUSY:
                 raise SystemExit(f"GPIO{pin} is in use by another process "
-                                 f"(see: gpioinfo -c {self._chip_path} {pin})")
+                                 f"(see: gpioinfo -c {self._chip_path} {pin}). If the "
+                                 "status display's service has the panel: "
+                                 "sudo systemctl stop bs3d-lcd")
             raise
 
     def output(self, pin, value):

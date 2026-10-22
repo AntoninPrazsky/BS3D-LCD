@@ -340,6 +340,17 @@ class RecoveredPage(Page):
         return image
 
 
+def stopped(ui, wall):
+    """What the panel keeps showing after a clean stop (#6): plain black and white,
+    since nothing dithers it any more."""
+    image = page(WIDTH, 64)
+    ui.big.draw(image, WIDTH // 2, 12, "STOPPED", align="center")
+    ui.body.draw(image, WIDTH // 2, 34, time.strftime("%d.%m. %H:%M", time.localtime(wall)),
+                 align="center")
+    ui.tiny.draw(image, WIDTH // 2, 50, "the status display is off", align="center")
+    return image.point(lambda v: 255 if v >= 128 else 0).convert("1")
+
+
 def rotation(ui, credits_speed=8.0):
     """The pages that take turns, in order (#5)."""
     return [ServerPage(ui), WarningsPage(ui), ActivityPage(ui),

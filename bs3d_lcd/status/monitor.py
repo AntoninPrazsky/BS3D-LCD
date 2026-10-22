@@ -12,7 +12,7 @@ import time
 
 from .sources import EVERY
 from .state import ERROR, WARNING, Alert, Box, Server, State
-from .ui import fmt_age
+from .ui import fmt_age, fmt_span
 
 GB = 1e9
 OFFLINE = ("service-down", "health", "tunnel", "public")
@@ -27,8 +27,9 @@ class Monitor:
     are measured on the wall ``clock``.
     """
 
-    def __init__(self, config, store, clock=time.time):
-        self.config, self.store, self.clock = config, store, clock
+    def __init__(self, config, store, clock=time.time, log=None):
+        self.config, self.store, self.clock, self.log = config, store, clock, log
+        self.logged = {}            # the alerts standing at the last state, for the log
         self.started = clock()
         self.began = {}             # condition key -> when it began (Unix seconds)
         self.restarts = []          # when automatic restarts were seen
@@ -122,7 +123,20 @@ class Monitor:
         if box:
             box_state = Box(at=self.store.get("box").at, backup_at=backup_at, **box)
         alerts.sort(key=lambda a: (a.severity != ERROR, a.since))
+        self.log_changes(alerts, now)
         return State(now=now, server=server, box=box_state, alerts=tuple(alerts))
+
+    def log_changes(self, alerts, now):
+        """Each alert into the log as it comes and goes: the journal keeps the history."""
+        current = {a.occurrence: a for a in alerts}
+        if self.log:
+            for occurrence, a in current.items():
+                if occurrence not in self.logged:
+                    self.log(f"{a.severity}: {a.title}, {a.detail}")
+            for occurrence, a in self.logged.items():
+                if occurrence not in current:
+                    self.log(f"cleared: {a.title}, after {fmt_span(now - a.since)}")
+        self.logged = current
 
     def count_restarts(self, service, now):
         """Automatic restarts: systemd counts them in NRestarts."""

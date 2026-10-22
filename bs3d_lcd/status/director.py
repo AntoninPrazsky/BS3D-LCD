@@ -12,7 +12,7 @@ import time
 
 from PIL import Image
 
-from . import strip
+from . import strip, systemd
 from ..easing import clamp01, smootherstep
 from .button import LONG, SHORT, PressTracker
 from .pages import AlertPage, Page, RecoveredPage
@@ -295,6 +295,9 @@ def run(device, panel, director, duration=None, button=None, commands=None, repo
     callables (the demo's keyboard). Stops after ``duration`` s, or on Ctrl+C
     with a fade-out. Every ``report`` s it logs the frame rate and how many
     frames came late, which the greys show as flicker.
+
+    Under systemd (#6) it reports ready after the first frame and pats the
+    watchdog from this loop, so a loop that stalls gets the service restarted.
     """
     fps = panel.gray_fps or 1000
     # Threads reading the sources hand the interpreter back within 1 ms, not 5:
@@ -306,6 +309,8 @@ def run(device, panel, director, duration=None, button=None, commands=None, repo
     slowest = 0.0
     level = None
     report_at = start + report
+    watchdog = systemd.watchdog_interval()
+    patted = None
 
     def show(gray, target):
         nonlocal level, n
@@ -329,6 +334,12 @@ def run(device, panel, director, duration=None, button=None, commands=None, repo
             gray, target = director.frame(t0)
             show(gray, target)
             shown += 1
+            if patted is None:
+                systemd.notify("READY=1")
+                patted = t0
+            elif watchdog and t0 - patted >= watchdog / 3:
+                systemd.notify("WATCHDOG=1")
+                patted = t0
             slowest = max(slowest, time.monotonic() - t0)
 
             due = paced + n / fps
@@ -339,8 +350,10 @@ def run(device, panel, director, duration=None, button=None, commands=None, repo
             elif now < due:
                 time.sleep(due - now)
             if report and now >= report_at:
-                log(f"{shown / report:.0f} fps, {late} late, slowest frame "
-                    f"{slowest * 1000:.1f} ms")
+                line = f"{shown / report:.0f} fps, {late} late, slowest frame " \
+                       f"{slowest * 1000:.1f} ms"
+                log(line)
+                systemd.notify(f"STATUS={line}")
                 shown = late = 0
                 slowest = 0.0
                 report_at = now + report

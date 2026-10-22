@@ -1,0 +1,43 @@
+[Unit]
+Description=BS3D-LCD: the score server's front panel
+Documentation=https://github.com/AntoninPrazsky/BS3D-LCD
+# The logo comes up early, without waiting for the network: the sources wait
+# for what they read on their own, and say STARTING until then.
+After=local-fs.target systemd-udevd.service
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/opt/bs3d-lcd/venv/bin/bs3d-lcd status --report 600
+User=bs3d-lcd
+Group=bs3d-lcd
+# spi and gpio: the panel and the button; video: vcgencmd (throttling);
+# systemd-journal: the score service's journal. Nothing else.
+SupplementaryGroups=spi gpio video systemd-journal
+Environment=PYTHONUNBUFFERED=1
+
+# A loop that stalls stops patting the watchdog, and systemd restarts it; the
+# restart sets the panel up afresh. A frozen panel must never pass for a
+# working one (#6).
+Restart=always
+RestartSec=2
+# The stop goes to the display alone, which then ends its journalctl itself.
+KillMode=mixed
+WatchdogSec=10
+TimeoutStartSec=30
+TimeoutStopSec=5
+# A frame that comes late shows as a flicker of the greys.
+Nice=-10
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

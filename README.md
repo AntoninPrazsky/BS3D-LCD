@@ -162,6 +162,22 @@ The logo plays first and is pushed out by the first page.
 
 It logs the frame rate once a minute (`--report`). On a Pi 5 it holds 200 fps, using about 12 % of one core; with the sources reading, about one frame a minute comes late.
 
+### Running it as a service
+
+```
+sudo deploy/install.sh              # install or update, and (re)start the service
+systemctl status bs3d-lcd
+journalctl -u bs3d-lcd              # alerts as they come and go, the frame rate every 10 min
+sudo systemctl stop bs3d-lcd        # before running bs3d-lcd by hand: the service has the panel
+sudo deploy/uninstall.sh            # remove it; /etc/bs3d-lcd stays
+```
+
+`install.sh` puts the code in `/opt/bs3d-lcd` with its own venv, adds the system user `bs3d-lcd` (no home, no login) and installs [`deploy/bs3d-lcd.service`](deploy/bs3d-lcd.service), which runs the display as that user with only the `spi`, `gpio`, `video` and `systemd-journal` groups. The first install makes `/etc/bs3d-lcd/config.toml` from your `~/.config/bs3d-lcd/config.toml`, or from the example; later ones leave it alone. To update: `git pull`, then `sudo deploy/install.sh` again.
+
+- **At boot** the logo comes up without waiting for the network, then the pages, which say STARTING until the first readings arrive.
+- **A frozen panel never passes for a working one.** The render loop pats systemd's watchdog; if it stalls for 10 s, systemd restarts the service, which sets the panel up afresh. The blinking colon of the clock shows it too.
+- **A clean stop** (`systemctl stop`, an update, a shutdown) fades out and leaves STOPPED with the time on the panel, so a stopped display says so instead of keeping old numbers.
+
 ### Screenshots
 
 ```
