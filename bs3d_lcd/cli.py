@@ -121,12 +121,14 @@ def parsers():
     d.add_argument("--loop", action="store_true", help="repeat the scenes until Ctrl+C")
 
     st = sub.add_parser("status", parents=[hardware, greyscale],
-                        help="the BS3D server's status display (for now with made-up data: "
-                             "--demo)")
+                        help="the BS3D server's status display")
+    st.add_argument("--config", metavar="PATH",
+                    help="settings file (default: /etc/bs3d-lcd/config.toml, else "
+                         "~/.config/bs3d-lcd/config.toml, else the built-in defaults)")
     st.add_argument("--demo", action="store_true",
-                    help="made-up data that change, with a warning and an error now and then; "
-                         "type Enter for a short press, a + Enter for a long hold, e or w + "
-                         "Enter to raise or clear an error or a warning")
+                    help="made-up data that change, with a warning and an error now and then, "
+                         "instead of the server's; e or w + Enter raises or clears an error or "
+                         "a warning")
     g = st.add_argument_group("pages")
     g.add_argument("--page-time", type=float, default=8.0, metavar="SECONDS",
                    help="how long a page stays (default 8)")
@@ -209,8 +211,8 @@ def open_device(args):
     return lcd
 
 
-def keyboard(source):
-    """The demo's keyboard: lines typed on stdin, as presses and alarms."""
+def keyboard(source=None):
+    """The keyboard: lines typed on stdin, as presses, and in the demo as alarms."""
     from .status.button import LONG, SHORT
 
     lines = queue.SimpleQueue()
@@ -231,13 +233,24 @@ def keyboard(source):
                 out.append(SHORT)
             elif line == "a":
                 out.append(LONG)
-            elif line in ("e", "w"):
+            elif line in ("e", "w") and source is not None:
                 key = "api-down" if line == "e" else "backup-old"
                 out.append(lambda now, key=key: source.toggle(key, now))
     return commands
 
 
-def run_status(lcd, panel, args):
+def load_config(args):
+    """The status display's settings, or a message why they cannot be read."""
+    from .status import config
+
+    path = config.find(args.config)
+    try:
+        return config.load(path), path
+    except (OSError, ValueError) as e:      # tomllib.TOMLDecodeError is a ValueError
+        raise SystemExit(f"{path}: {e}" if path and str(path) not in str(e) else str(e))
+
+
+def run_status(lcd, panel, args, settings=None):
     from .easing import EASINGS
     from .status.button import Button, PressTracker
     from .status.demo import DemoSource
@@ -247,9 +260,24 @@ def run_status(lcd, panel, args):
     from .status.ui import UI
 
     ui = UI()
-    source = DemoSource()
+    stop = journal = None
+    if args.demo:
+        demo = DemoSource()
+        state = demo.state
+    else:
+        from .status import sources
+        from .status.monitor import Monitor
+
+        config, path = settings
+        demo = None
+        store, stop, threads = sources.start(config)
+        journal = next(t for t in threads if isinstance(t, sources.Journal))
+        state = Monitor(config, store)
+        print(f"Reading {config.service}, {config.tunnel} and {config.backup} "
+              f"({path or 'built-in settings'}); the check through Cloudflare is "
+              f"{'on' if config.public_health else 'off'}.", flush=True)
     logo = None if args.no_logo else scenes.SCENES["logo"](panel)
-    director = Director(ui, source.state, rotation(ui, args.credits_speed),
+    director = Director(ui, state, rotation(ui, args.credits_speed),
                         page_time=args.page_time, slide=args.slide,
                         easing=EASINGS[args.easing],
                         siren=Siren(1 - args.siren, 1 + args.siren, args.siren_period,
@@ -264,16 +292,19 @@ def run_status(lcd, panel, args):
             return 1
         print(f"Button on GPIO{args.button}: a short press shows the next page, a hold of "
               f"{args.long_press:g} s switches the alarm off.", flush=True)
-    commands = keyboard(source) if sys.stdin.isatty() else None
+    commands = keyboard(demo) if sys.stdin.isatty() else None
     if commands:
-        print("Keys (+ Enter): Enter = short press, a = long hold, e = error on/off, "
-              "w = warning on/off.", flush=True)
+        print("Keys (+ Enter): Enter = short press, a = long hold"
+              + (", e = error on/off, w = warning on/off." if demo else "."), flush=True)
     try:
         run(lcd, panel, director, button=button, commands=commands, report=args.report,
             log=lambda line: print(line, flush=True))
     finally:
         if button:
             button.close()
+        if stop:
+            stop.set()
+            journal.close()
     return 0
 
 
@@ -299,10 +330,9 @@ def main(argv=None):
         print(f"{len(written)} screenshots written to {args.out}/")
         return 0
 
+    settings = None
     if args.command == "status" and not args.demo:
-        print("The server's sources are not there yet (BS3D-LCD#4): run it with --demo.",
-              file=sys.stderr)
-        return 2
+        settings = load_config(args)        # before the panel: a bad file stops it here
     try:
         lcd = open_device(args)
     except RuntimeError as e:
@@ -310,7 +340,7 @@ def main(argv=None):
         return 1
     try:
         if args.command == "status":
-            return run_status(lcd, panel, args)
+            return run_status(lcd, panel, args, settings)
         if args.command == "sweep":
             from .calibrate import run_sweep
             run_sweep(lcd, panel, args.what, args.contrast, args.ratio, args.step, args.hold)

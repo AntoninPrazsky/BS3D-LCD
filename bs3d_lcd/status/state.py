@@ -68,10 +68,30 @@ class Play:
 
 
 @dataclass(frozen=True)
+class Box:
+    """The Pi itself (#4, #5)."""
+
+    at: float
+    host: str = ""
+    uptime: float | None = None         # seconds
+    temp: float | None = None           # CPU, °C
+    throttled: int | None = None        # vcgencmd get_throttled bits
+    fan: int | None = None              # rpm
+    load: float | None = None           # 1-minute load average
+    memory: float | None = None         # share in use, 0-1
+    disk_free: int | None = None        # bytes free on /
+    disk_share: float | None = None     # share free on /, 0-1
+    card_free: int | None = None        # bytes free on the backup card; None: not mounted
+    card_share: float | None = None
+    backup_at: float | None = None      # the last nightly backup that succeeded (or ran)
+
+
+@dataclass(frozen=True)
 class State:
     now: float
     server: Server | None = None
     play: Play | None = None
+    box: Box | None = None
     alerts: tuple = field(default=())
 
     @property

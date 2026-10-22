@@ -7,6 +7,7 @@ drive it with a made-up clock. ``run()`` is the loop that puts its frames on
 the panel at a steady 200 fps.
 """
 
+import sys
 import time
 
 from PIL import Image
@@ -296,6 +297,9 @@ def run(device, panel, director, duration=None, button=None, commands=None, repo
     frames came late, which the greys show as flicker.
     """
     fps = panel.gray_fps or 1000
+    # Threads reading the sources hand the interpreter back within 1 ms, not 5:
+    # a frame that comes late shows as a flicker of the greys.
+    sys.setswitchinterval(0.001)
     start = time.monotonic()
     paced = start               # the time frame 0 was due, moved on after a stall
     n = shown = late = 0

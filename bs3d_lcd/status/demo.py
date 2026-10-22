@@ -10,7 +10,7 @@ import math
 import random
 import time
 
-from .state import ERROR, WARNING, Alert, Play, Player, Server, State
+from .state import ERROR, WARNING, Alert, Box, Play, Player, Server, State
 
 NAMES = ("Kateřina", "Bublinka", "Jiří", "Šárka_7", "Ondra-K", "Łukasz", "Žaneta",
          "Ægir", "Tomáš", "Mia", "Ľubo", "Zdeněk", "Øyvind", "Bára", "Kuba 77", "Eliška",
@@ -53,7 +53,6 @@ class DemoSource:
         self.base_hours = [max(0, round(18 + 14 * math.sin((h - 15) / 24 * 2 * math.pi)
                                         + rng.uniform(-6, 6))) for h in range(24)]
         self.manual = {}            # key -> (on, since) set by toggle()
-        self.acked_until = {}
 
     def wall(self, now):
         return self.wall0 + (now - self.start)
@@ -105,4 +104,8 @@ class DemoSource:
                     players_today=11, last_score_at=last,
                     month=time.strftime("%Y-%m", time.localtime(wall)),
                     top_month=self.top_month, top_all=self.top_all)
-        return State(now=wall, server=server, play=play, alerts=alerts)
+        box = Box(at=wall - (wall % 10), host="BS3DServer", uptime=wall - server.since + 600,
+                  temp=48 + 3 * math.sin(wall / 300), throttled=0, fan=2860, load=0.42,
+                  memory=0.31, disk_free=443_800_000_000, disk_share=0.88,
+                  card_free=125_500_000_000, card_share=0.99, backup_at=wall - 11 * 3600)
+        return State(now=wall, server=server, play=play, box=box, alerts=alerts)

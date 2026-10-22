@@ -9,8 +9,8 @@ from PIL import Image
 from bs3d_lcd.font import Font, font_names
 from bs3d_lcd.status import shots, strip
 from bs3d_lcd.status.demo import ALERTS, DemoSource
-from bs3d_lcd.status.pages import (HEIGHT, WIDTH, ActivityPage, AlertPage, RecoveredPage,
-                                   ServerPage, TopPlayersPage, WarningsPage)
+from bs3d_lcd.status.pages import (HEIGHT, WIDTH, ActivityPage, AlertPage, BoxPage,
+                                   RecoveredPage, ServerPage, TopPlayersPage, WarningsPage)
 from bs3d_lcd.status.state import Alert, Play, Player, Server, State
 from bs3d_lcd.status.ui import UI, fmt_age, fmt_int, fmt_span
 
@@ -89,6 +89,7 @@ def states():
 
 class PagesTest(unittest.TestCase):
     PAGES = (ServerPage(UI_), ActivityPage(UI_), TopPlayersPage(UI_), WarningsPage(UI_),
+             BoxPage(UI_),
              AlertPage(UI_), RecoveredPage(UI_, ("API DOWN", "TUNNEL DOWN"), 754))
 
     def test_every_page_renders_at_its_size(self):

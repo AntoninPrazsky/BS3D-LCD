@@ -1,0 +1,27 @@
+# BS3D-LCD status display settings: copy to /etc/bs3d-lcd/config.toml (or, for
+# manual runs, ~/.config/bs3d-lcd/config.toml) and change what differs.
+# Every setting has a default; the values below are the defaults.
+
+[sources]
+service = "bs3d-api"                            # the score service's unit
+tunnel = "cloudflared"                          # the Cloudflare tunnel's unit
+backup = "bs3d-api-backup"                      # the nightly backup's unit and .timer
+health = "http://127.0.0.1:5000/v1/health"
+ready = "http://127.0.0.1:20241/ready"          # cloudflared --metrics 127.0.0.1:20241
+release = "/opt/bs3d-api/current"               # a link to the running release
+backup_mount = "/mnt/bs3d-backup"
+# The same health check through Cloudflare, as the game sees it. Without it
+# the end-to-end check is left out. Kept out of the repository.
+# public_health = "https://scores.example.com/v1/health"
+
+[thresholds]
+service_hold = 20       # s the service may be down before it alerts (a deploy restarts it)
+health_fails = 3        # failed health checks in a row (one every 10 s)
+tunnel_hold = 60        # s without the tunnel
+public_fails = 3        # failed checks through Cloudflare (one a minute)
+temp_warning = 80       # °C, held for 60 s
+temp_error = 85
+free_warning = 10       # % free on the disk or the backup card
+free_error = 3
+backup_age = 26         # hours since the last nightly backup
+log_window = 15         # minutes a logged error or warning stands

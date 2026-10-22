@@ -227,6 +227,37 @@ class TopPlayersPage(Page):
         return self._mask
 
 
+class BoxPage(Page):
+    """The Pi itself: temperature and fan, load and memory, free space, the backup."""
+
+    name = "box"
+    GB = 1e9
+
+    def skip(self, state):
+        return state.box is None
+
+    def render(self, state, t):
+        ui, image, box = self.ui, page(WIDTH, HEIGHT), state.box
+        shade = _shade(box.at, state.now, 60)
+        ui.bold.draw(image, 1, 1, box.host or "PI")
+        if box.uptime is not None:
+            ui.body.draw(image, WIDTH - 1, 1, f"up {fmt_span(box.uptime)}", fill=shade,
+                         align="right")
+        cpu = "--" if box.temp is None else f"{box.temp:.0f} °C"
+        if box.fan:
+            cpu += f" · {fmt_int(box.fan)} rpm"
+        load = "--" if box.load is None else f"{box.load:.2f}"
+        if box.memory is not None:
+            load += f" · mem {100 * box.memory:.0f} %"
+        disk = "--" if box.disk_free is None else f"{box.disk_free / self.GB:.0f} GB free"
+        card = "not mounted" if box.card_free is None else f"{box.card_free / self.GB:.0f} GB free"
+        backup = "--" if box.backup_at is None else f"{fmt_age(state.now - box.backup_at)} ago"
+        for i, (label, value) in enumerate((("cpu", cpu), ("load", load), ("disk", disk),
+                                            ("card", card), ("backup", backup))):
+            row(image, ui.body, 12 + 9 * i, label, value, value_fill=shade)
+        return image
+
+
 class WarningsPage(Page):
     """Each standing warning and error, with how long it has stood."""
 
@@ -312,4 +343,4 @@ class RecoveredPage(Page):
 def rotation(ui, credits_speed=8.0):
     """The pages that take turns, in order (#5)."""
     return [ServerPage(ui), WarningsPage(ui), ActivityPage(ui),
-            TopPlayersPage(ui, speed=credits_speed)]
+            TopPlayersPage(ui, speed=credits_speed), BoxPage(ui)]

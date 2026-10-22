@@ -15,7 +15,7 @@ from .. import screenshots
 from . import strip
 from .demo import ALERTS, DemoSource
 from .director import Director
-from .pages import ActivityPage, AlertPage, ServerPage, TopPlayersPage, WarningsPage
+from .pages import ActivityPage, AlertPage, BoxPage, ServerPage, TopPlayersPage, WarningsPage
 from .siren import Siren
 from .state import Alert, State
 from .ui import UI
@@ -31,7 +31,8 @@ def duty(panel, gray):
 
 def demo_state(alerts=()):
     state = DemoSource(start=0.0, wall=WALL, script=False).state(0.0)
-    return State(now=state.now, server=state.server, play=state.play, alerts=tuple(alerts))
+    return State(now=state.now, server=state.server, play=state.play, box=state.box,
+                 alerts=tuple(alerts))
 
 
 def alert(key, minutes_ago, acknowledged=False):
@@ -53,12 +54,13 @@ def shots(ui):
     failing = demo_state([alert("api-down", 3), alert("backup-old", 64)])
     top = TopPlayersPage(ui)
     return [
-        ("server", screen(ui, calm, ServerPage(ui), 1.0, 0, 3)),
-        ("activity", screen(ui, calm, ActivityPage(ui), 1.0, 1, 3)),
-        ("top", screen(ui, calm, top, 0.0, 2, 3)),
-        ("top-roll", screen(ui, calm, top, top.hold + 9.0, 2, 3)),
-        ("warnings", screen(ui, warned, WarningsPage(ui), 1.0, 1, 4)),
-        ("alert", screen(ui, failing, AlertPage(ui), 1.0, -1, 4)),
+        ("server", screen(ui, calm, ServerPage(ui), 1.0, 0, 4)),
+        ("activity", screen(ui, calm, ActivityPage(ui), 1.0, 1, 4)),
+        ("top", screen(ui, calm, top, 0.0, 2, 4)),
+        ("top-roll", screen(ui, calm, top, top.hold + 9.0, 2, 4)),
+        ("box", screen(ui, calm, BoxPage(ui), 1.0, 3, 4)),
+        ("warnings", screen(ui, warned, WarningsPage(ui), 1.0, 1, 5)),
+        ("alert", screen(ui, failing, AlertPage(ui), 1.0, -1, 5)),
     ]
 
 

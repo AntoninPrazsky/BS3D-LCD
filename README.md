@@ -1,6 +1,6 @@
 # BS3D-LCD
 
-A 2.4" ST7565 128×64 monochrome LCD on a Raspberry Pi 5, as the front-panel display of the [BS3D](https://github.com/AntoninPrazsky/BS3D) game server (the Pi that runs [BS3D-API](https://github.com/AntoninPrazsky/BS3D-API)). It greets you with the game's animated startup logo, and is becoming the server's status display: whether the server is online, how the playing goes, and a siren when something fails ([the plan](https://github.com/AntoninPrazsky/BS3D-LCD/issues/1); it runs on made-up data for now).
+A 2.4" ST7565 128×64 monochrome LCD on a Raspberry Pi 5, as the front-panel display of the [BS3D](https://github.com/AntoninPrazsky/BS3D) game server (the Pi that runs [BS3D-API](https://github.com/AntoninPrazsky/BS3D-API)). It greets you with the game's animated startup logo, and is becoming the server's status display: whether the server is online, how the playing goes, and a siren when something fails ([the plan](https://github.com/AntoninPrazsky/BS3D-LCD/issues/1); the play statistics still run on made-up data).
 
 <p align="center">
   <img src="docs/screenshots/logo.gif" alt="The animated BS3D startup logo on the LCD (simulated)" width="710"><br>
@@ -50,7 +50,8 @@ Pages take turns under a strip that always shows whether the server is online an
 |:---:|:---:|
 | <img src="docs/screenshots/status-server.png" alt="server page"><br>Server: online, uptime, tunnel, last score | <img src="docs/screenshots/status-activity.png" alt="activity page"><br>Activity: submissions per hour, the current hour grey |
 | <img src="docs/screenshots/status-top.png" alt="top players page"><br>Top players, which then rolls like film credits | <img src="docs/screenshots/status-top-roll.png" alt="top players rolling"><br>…with the nicknames as the game shows them |
-| <img src="docs/screenshots/status-warnings.png" alt="warnings page"><br>Warnings, with how long each has stood | <img src="docs/screenshots/status-alert.png" alt="alert page"><br>An error: what, since when; the panel pulses |
+| <img src="docs/screenshots/status-box.png" alt="the Pi page"><br>The Pi: temperature, fan, load, space, backup | <img src="docs/screenshots/status-warnings.png" alt="warnings page"><br>Warnings, with how long each has stood |
+| <img src="docs/screenshots/status-alert.png" alt="alert page"><br>An error: what, since when; the panel pulses | |
 | <img src="docs/screenshots/status-push.gif" alt="the push between pages"><br>The push between two pages | <img src="docs/screenshots/status-siren.gif" alt="the siren"><br>The siren |
 
 ### Greyscale on a 1-bit panel
@@ -140,20 +141,26 @@ Values found on the OPEN-SMART panel, all of them the defaults:
 ### The status display
 
 ```
-.venv/bin/bs3d-lcd status --demo                    # the status display on made-up data
+.venv/bin/bs3d-lcd status                           # the status display of this server
+.venv/bin/bs3d-lcd status --demo                    # on made-up data, with alarms now and then
 .venv/bin/bs3d-lcd status --demo --page-time 4      # pages change faster
 .venv/bin/bs3d-lcd compare slide                    # push lengths and curves, labelled
 .venv/bin/bs3d-lcd compare siren                    # siren depths, shapes and periods
 .venv/bin/bs3d-lcd compare credits                  # speeds of the Top players roll
 ```
 
-The logo plays first and is pushed out by the first page. With `--demo` the numbers change as time goes on, a warning comes and goes, and every 5 minutes an error sounds the siren for a minute.
+The logo plays first and is pushed out by the first page.
+
+- **What it reads**, each in its own thread and never the service's database: the `bs3d-api` unit (`systemctl show`), its `GET /v1/health`, the `cloudflared` unit and its readiness, the release the `/opt/bs3d-api/current` link points to, the nightly backup's unit and timer, the service's journal (`journalctl -f`, so the user needs the `adm` or `systemd-journal` group), the Pi's temperature, throttling, fan, load, memory and free space, and optionally the same health check through Cloudflare. The play statistics need [BS3D-API#13](https://github.com/AntoninPrazsky/BS3D-API/issues/13); until then those pages are left out.
+- **When it alerts:** the table of conditions is in [#4](https://github.com/AntoninPrazsky/BS3D-LCD/issues/4). Anything that makes the server unreachable sounds the siren: the service down for 20 s, its health failing three checks in a row, the tunnel down for a minute, or the check through Cloudflare failing three times. So do a failed backup, an error the service logs, a nearly full disk, under-voltage and over 85 °C. The rest are warnings.
+- **Settings:** `--config PATH`, else `/etc/bs3d-lcd/config.toml`, else `~/.config/bs3d-lcd/config.toml`; [`deploy/config.example.toml`](deploy/config.example.toml) lists them all with their defaults. The public address for the check through Cloudflare goes only there.
+- **`--demo`** makes the numbers change as time goes on, a warning come and go, and every 5 minutes an error sound the siren for a minute.
 
 - **The button**, between GPIO26 (pin 37) and GND (pin 39), needs no resistor: the line's pull-up holds it high. A short press (released within 0.8 s) shows the next page, during the siren too. A hold of 1.5 s switches the alarm off; while the siren sounds, a bar along the bottom fills as you hold. The error then stays on the Warnings page until it clears, and a new error sounds again. `--button none` runs without it.
-- **The keyboard**, in a terminal: Enter is a short press, `a` + Enter a long hold, `e` or `w` + Enter raises or clears an error or a warning.
+- **The keyboard**, in a terminal: Enter is a short press, `a` + Enter a long hold; in the demo `e` or `w` + Enter raises or clears an error or a warning.
 - **Tuning:** `--slide`, `--easing`, `--page-time`, `--siren`, `--siren-period`, `--siren-shape`, `--credits-speed`, `--short-press`, `--long-press`; `bs3d-lcd status --help` lists them.
 
-It logs the frame rate once a minute (`--report`). On a Pi 5 it holds 200 fps with no late frames, using about 12 % of one core.
+It logs the frame rate once a minute (`--report`). On a Pi 5 it holds 200 fps, using about 12 % of one core; with the sources reading, about one frame a minute comes late.
 
 ### Screenshots
 
