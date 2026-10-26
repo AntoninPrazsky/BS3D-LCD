@@ -1,5 +1,5 @@
-"""The director: which page is on the panel, the push between pages, the siren
-and the button (#2, #3).
+"""The director: which page is on the panel, the push between pages, the siren,
+the knock for a new note and the button (#2, #3, #8).
 
 ``Director.frame(now)`` composes the greyscale picture and the V0 level for
 the monotonic time ``now``; it touches no hardware, so tests and screenshots
@@ -9,14 +9,16 @@ the panel at a steady 200 fps.
 
 import sys
 import time
+from dataclasses import replace
 
 from PIL import Image
 
 from . import strip, systemd
 from ..easing import clamp01, smootherstep
 from .button import LONG, SHORT, PressTracker
-from .pages import AlertPage, Page, RecoveredPage
-from .siren import Siren
+from .pages import AlertPage, NotePage, Page, RecoveredPage
+from .seen import Seen
+from .siren import Knock, Siren
 
 WIDTH, HEIGHT = 128, 64
 BAR = 2             # rows of the hold bar along the bottom edge
@@ -66,11 +68,19 @@ class Director:
     :param slide: the push's length in s; ``easing`` its curve.
     :param logo: a scene with ``gray(t)``, played for ``logo_time`` s first.
     :param label: shown in the strip instead of the clock (the compare tools).
+    :param knock: the signal while a note is unacknowledged (#8).
+    :param seen: the newest note acknowledged, kept across restarts (``Seen``).
+
+    A new note is announced as an error is, a step below it: the note page
+    takes over and the panel knocks until a long hold acknowledges every note
+    the snapshot lists; while an error sounds, the siren and the alert page come
+    first, and one hold acknowledges both. On the first start, with nothing
+    kept, every note already there counts as seen.
     """
 
     def __init__(self, ui, source, pages, page_time=8.0, slide=1.0, easing=smootherstep,
                  siren=None, tracker=None, logo=None, logo_time=4.5, label=None,
-                 state_every=0.1):
+                 state_every=0.1, knock=None, seen=None):
         self.ui, self.source, self.pages = ui, source, list(pages)
         self.page_time, self.slide_time, self.easing = page_time, slide, easing
         self.siren = siren or Siren()
@@ -79,6 +89,9 @@ class Director:
         self.logo_time = logo_time
         self.label = label
         self.alert = AlertPage(ui)
+        self.note = NotePage(ui)
+        self.knock = knock or Knock()
+        self.seen = seen or Seen()
         self.state_every = state_every
 
         self.screen = None          # the page on the panel
@@ -87,6 +100,7 @@ class Director:
         self.acked = set()          # acknowledged error occurrences
         self.alarmed = set()        # error occurrences the alert page was pushed for
         self.incident = None        # (since, titles) of the errors standing
+        self.announced = None       # the newest unseen note the note page was pushed for
         self.requests = []          # SHORT and LONG presses not yet handled
         self.queued = None          # a push asked for during a push: (page, index)
         self.started = None
@@ -172,6 +186,7 @@ class Director:
             self._start(state, now)
 
         state = self._alarms(state, now)
+        state = self._notes(state, now)
         self._buttons(state, now)
         self._rotate(state, now)
         image = self._compose(state, now)
@@ -180,7 +195,8 @@ class Director:
             if self.queued:
                 (page, index), self.queued = self.queued, None
                 self._push(page, state, now, index)
-        return image, self.siren.level(now)
+        level = self.siren.level(now)
+        return image, level if level != 1.0 else self.knock.level(now)
 
     def _start(self, state, now):
         """The first page after the logo: the alert if an error stands, else the
@@ -217,15 +233,39 @@ class Director:
             self._push(RecoveredPage(self.ui, titles, state.now - since), state, now)
         return state
 
+    def _notes(self, state, now):
+        play = state.play
+        if play is None or play.notes_recent is None:
+            # No snapshot now, or one from a service before BS3D-API#15: nothing to watch
+            self.knock.stop(now)
+            return state
+        if self.seen.at is None:
+            self.seen.set(max((n.at for n in play.notes_recent), default=0.0))
+        unseen = tuple(n for n in play.notes_recent if n.at > self.seen.at)
+        state = replace(state, unseen=unseen)
+        if unseen and not state.alarms:
+            self.knock.start(now)
+        else:
+            self.knock.stop(now)
+        if unseen and unseen[0].at != self.announced:
+            self.announced = unseen[0].at
+            if not state.alarms:
+                self._push(self.note, state, now)
+        return state
+
     def _buttons(self, state, now):
         if self.tracker.poll(now) == LONG:
             self.requests.append(LONG)
         requests, self.requests = self.requests, []
         for kind in requests:
             if kind == LONG:
-                if state.alarms:
+                if state.alarms or state.unseen:
                     self.acked |= {a.occurrence for a in state.alarms}
                     self.siren.stop(now)
+                    if state.unseen:
+                        # Every note the snapshot lists, not only those on the page
+                        self.seen.set(max(n.at for n in state.play.notes_recent))
+                        self.knock.stop(now)
                     self._push_next(state, now)
             elif kind == SHORT:
                 self._push_next(state, now)
@@ -237,11 +277,22 @@ class Director:
         alarms = state.alarms
         if page is self.alert:
             if not alarms:
+                if state.unseen:
+                    self._push(self.note, state, now)
+                else:
+                    self._push_next(state, now)
+            return
+        if page is self.note:
+            if alarms:
+                self._push(self.alert, state, now)
+            elif not state.unseen:
                 self._push_next(state, now)
             return
         if now - self.screen.start >= page.duration(state, self.page_time):
             if alarms:
                 self._push(self.alert, state, now)
+            elif state.unseen:
+                self._push(self.note, state, now)
             else:
                 self._push_next(state, now)
 
@@ -283,9 +334,9 @@ class Director:
                 image.paste(slide.old.image_at(state, now), (-x, strip.HEIGHT))
                 image.paste(slide.new.image_at(state, now), (WIDTH - x, strip.HEIGHT))
 
-        # While an alarm sounds, a held button fills a bar along the bottom.
+        # While an alarm sounds or a note knocks, a held button fills a bar along the bottom.
         held = self.tracker.held(now)
-        if held is not None and self.siren.on:
+        if held is not None and (self.siren.on or self.knock.on):
             width = round(WIDTH * min(held / self.tracker.long, 1.0))
             image.paste(0, (0, HEIGHT - BAR - 1, WIDTH, HEIGHT - BAR))
             image.paste(255, (0, HEIGHT - BAR, width, HEIGHT))

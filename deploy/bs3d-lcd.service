@@ -15,6 +15,9 @@ Group=bs3d-lcd
 # systemd-journal: the score service's journal. Nothing else.
 SupplementaryGroups=spi gpio video systemd-journal
 Environment=PYTHONUNBUFFERED=1
+# /var/lib/bs3d-lcd, the user's and writable under ProtectSystem=strict: the
+# newest note acknowledged, so a restart does not knock again for it (#8).
+StateDirectory=bs3d-lcd
 
 # A loop that stalls stops patting the watchdog, and systemd restarts it; the
 # restart sets the panel up afresh. A frozen panel must never pass for a

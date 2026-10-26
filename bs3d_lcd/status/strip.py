@@ -2,7 +2,7 @@
 
 Left, the server's state: a slowly beating dot and ONLINE while all is well,
 an icon when there are warnings or errors, OFFLINE inverted when the service
-is down. In the middle the time, with a blinking colon that is also the
+is down; after it an envelope while a note is unacknowledged (#8). In the middle the time, with a blinking colon that is also the
 display's own heartbeat (#6). Right, a dot for each page.
 """
 
@@ -78,7 +78,9 @@ def render(ui, state, t, index=0, count=0, label=None):
         # The compare tools: the setting on show, instead of everything else.
         ui.tiny.draw(image, WIDTH // 2, 1, label, align="center")
     else:
-        status(ui, image, state, t)
+        x = status(ui, image, state, t)
+        if state.unseen:
+            draw_icon(image, x + 4, 1, "note")
         edge = clock(ui, image, state.now, WIDTH // 2 + 6)
         if count > 1:
             dots(image, index, count, WIDTH, edge + 2)

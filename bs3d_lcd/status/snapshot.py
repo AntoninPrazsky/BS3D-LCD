@@ -2,16 +2,17 @@
 
 ``bs3d-api-status.service`` rewrites ``/run/bs3d-status/status.json`` every
 15 s: counts, today's play, the newest clears and since BS3D-API#15 the newest
-submissions and the players who played last, the Top players and the backup
-records, never a hash or a hidden player. A key a service before #15 does not
-write is read as empty. The display's user reads it as a
+submissions, the players who played last and the newest notes' times and
+senders, the Top players and the backup records, never a hash, a hidden
+player or a note's text. A key a service before #15 does not write is read as
+empty, and its notes as None: nothing to watch. The display's user reads it as a
 member of the group ``bs3d-status``; it never reads the database itself.
 """
 
 import json
 from datetime import datetime
 
-from .state import Clear, Play, Player, RecentPlayer
+from .state import Clear, Note, Play, Player, RecentPlayer
 
 FORMAT = 1
 
@@ -54,6 +55,8 @@ def play(data):
         recent=clears(data.get("recent") or ()),
         recent_players=tuple(RecentPlayer(r["player"], moment(r["last_at"]), r["clears"], r["attempts"],
                                           r["first_day"]) for r in data.get("recent_players") or ()),
+        notes_recent=tuple(Note(moment(n["at"]), n["from_kind"], n.get("from")) for n in data["notes_recent"])
+        if "notes_recent" in data else None,
         month=top["month"],
         top_month=players(top["this_month"]),
         top_all=players(top["all_time"]),

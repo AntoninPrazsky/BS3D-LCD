@@ -1,11 +1,12 @@
-"""Tuning on the panel: the push, the siren and the Top players roll, each setting
-in turn, labelled in the strip (#2, #3, #5)."""
+"""Tuning on the panel: the push, the siren, the knock for a new note and the Top
+players roll, each setting in turn, labelled in the strip (#2, #3, #5, #8)."""
 
 from ..easing import EASINGS
 from .demo import DemoSource
 from .director import Director, run
 from .pages import ActivityPage, ServerPage, TopPlayersPage
-from .siren import Siren
+from .seen import Seen
+from .siren import Knock, Siren
 from .ui import UI
 
 # The first of each is the default, picked by the owner on the panel (2026-10-19).
@@ -15,9 +16,11 @@ SLIDES = (("smootherstep", 1.0), ("smootherstep", 0.7), ("smootherstep", 1.3),
 # (shape, depth, period in s): the level swings between 1 - depth and 1 + depth.
 SIRENS = (("siren", 0.15, 1.5), ("siren", 0.10, 1.5), ("siren", 0.20, 1.5),
           ("sine", 0.15, 1.5), ("siren", 0.15, 1.0), ("siren", 0.15, 2.0))
+# (depth, period in s): two dips down to 1 - depth, every period. The first is the proposal of #8.
+NOTES = ((0.10, 4.0), (0.07, 4.0), (0.15, 4.0), (0.10, 3.0), (0.10, 6.0))
 CREDITS = (8, 6, 10, 12)        # px/s; faster ones blur on the slow liquid crystal
 
-HOLD = {"slide": None, "siren": 6.0, "credits": 15.0}
+HOLD = {"slide": None, "siren": 6.0, "note": 12.0, "credits": 15.0}
 PAGE_TIME = 2.0                 # between the pushes of compare slide
 
 
@@ -43,6 +46,15 @@ def settings(what, values=None):
                 siren = Siren(1 - depth, 1 + depth, period, shape)
                 return Director(ui, source.state, [ServerPage(ui)], siren=siren, label=label)
             out.append((f"{shape} {depth:g} {period:g}s", make, None))
+    elif what == "note":
+        notes = NOTES if not values else [(v, 4.0) for v in values]
+        for depth, period in notes:
+            def make(label, depth=depth, period=period):
+                source = DemoSource(script=False)
+                # Nothing acknowledged: the demo's notes all knock
+                return Director(ui, source.state, [ServerPage(ui)], knock=Knock(1 - depth, period=period),
+                                seen=Seen(at=0.0), label=label)
+            out.append((f"{depth:g} every {period:g}s", make, None))
     elif what == "credits":
         for speed in values or CREDITS:
             def make(label, speed=speed):
@@ -56,7 +68,7 @@ def settings(what, values=None):
 
 
 def run_compare(device, panel, what, values=None, hold=None, log=print):
-    """Show each setting of ``what`` (slide, siren or credits) for a while, labelled."""
+    """Show each setting of ``what`` (slide, siren, note or credits) for a while, labelled."""
     chosen = settings(what, values)
     for i, (label, make, seconds) in enumerate(chosen, 1):
         label = f"{label}  {i}/{len(chosen)}"

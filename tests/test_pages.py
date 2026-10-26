@@ -10,9 +10,10 @@ from bs3d_lcd.font import Font, font_names
 from bs3d_lcd.status import shots, strip
 from bs3d_lcd.status.demo import ALERTS, DemoSource
 from bs3d_lcd.status.pages import (HEIGHT, WIDTH, ActivityPage, AlertPage, AllTimePage, BoxPage,
-                                   LatestPlayersPage, LatestScoresPage, RecoveredPage, ServerPage,
-                                   TodayPage, TopPlayersPage, WarningsPage)
-from bs3d_lcd.status.state import Alert, Clear, Play, Player, RecentPlayer, Server, State
+                                   LatestPlayersPage, LatestScoresPage, NotePage, RecoveredPage,
+                                   ServerPage, TodayPage, TopPlayersPage, WarningsPage)
+from bs3d_lcd.status.state import Alert, Clear, Note, Play, Player, RecentPlayer, Server, State
+from bs3d_lcd.status.ui import icon
 from bs3d_lcd.status.ui import GREY, UI, fmt_age, fmt_int, fmt_span, page
 
 UI_ = UI()
@@ -92,6 +93,7 @@ def states():
         "offline": replace(busy, server=Server(at=busy.now, online=False)),
         "stale": replace(busy, play=replace(busy.play, at=busy.now - 3600)),
         "alerts": replace(busy, alerts=many),
+        "noted": replace(busy, unseen=busy.play.notes_recent[:3]),
         "longest": replace(busy, play=replace(busy.play, top_month=longest, top_all=longest,
                                               recent=long_clears, recent_players=long_players)),
     }
@@ -100,7 +102,7 @@ def states():
 class PagesTest(unittest.TestCase):
     PAGES = (ServerPage(UI_), TodayPage(UI_), LatestScoresPage(UI_), LatestPlayersPage(UI_),
              ActivityPage(UI_), TopPlayersPage(UI_), AllTimePage(UI_), WarningsPage(UI_), BoxPage(UI_),
-             AlertPage(UI_), RecoveredPage(UI_, ("API DOWN", "TUNNEL DOWN"), 754))
+             AlertPage(UI_), NotePage(UI_), RecoveredPage(UI_, ("API DOWN", "TUNNEL DOWN"), 754))
 
     def test_every_page_renders_at_its_size(self):
         for name, state in states().items():
@@ -118,6 +120,30 @@ class PagesTest(unittest.TestCase):
             with self.subTest(name):
                 image = strip.render(UI_, state, 1.0, 2, 4)
                 self.assertEqual(image.size, (128, strip.HEIGHT))
+
+    def test_the_note_page_names_the_sender_never_the_text(self):
+        sender = NotePage.sender
+        self.assertEqual(sender(Note(0, "player", "Ann")), ("Ann", ""))
+        self.assertEqual(sender(Note(0, "claimed", "Kuba 77")), ("Kuba 77?", "name not verified"))
+        self.assertEqual(sender(Note(0, "anonymous", None)), ("anonymous", "no name given"))
+        self.assertEqual(sender(Note(0, "hidden", None)), ("hidden player", "the name is hidden"))
+        state, page = states()["noted"], NotePage(UI_)
+        one = page.render(replace(state, unseen=state.unseen[:1]), 1.0)
+        many = page.render(state, 1.0)
+        self.assertNotEqual(one.tobytes(), many.tobytes())     # NEW NOTES and how many
+        # The longest nickname, claimed, still fits within the page's sides
+        long = (Note(state.now - 60, "claimed", "ŘŽŠÁÉŮÝÍĚĎŤŇÓÚŮŘ"),)
+        image = page.render(replace(state, unseen=long), 1.0)
+        for x in (0, WIDTH - 1):
+            self.assertIsNone(image.crop((x, 12, x + 1, HEIGHT)).getbbox())
+
+    def test_an_envelope_stands_in_the_strip_while_a_note_is_unseen(self):
+        s = states()
+        drawn = strip.render(UI_, s["noted"], 1.0, 0, 8)
+        plain = strip.render(UI_, s["busy"], 1.0, 0, 8)
+        envelope = drawn.crop((40, 0, 40 + icon("note").width + 6, 8))
+        self.assertIsNotNone(envelope.getbbox())
+        self.assertIsNone(plain.crop((40, 0, 40 + icon("note").width + 6, 8)).getbbox())
 
     def test_the_page_dots_never_reach_the_clock(self):
         state = states()["busy"]

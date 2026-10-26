@@ -77,6 +77,15 @@ class RecentPlayer:
 
 
 @dataclass(frozen=True)
+class Note:
+    """One of the newest notes (BS3D-API#15): when it came and who sent it, nothing else."""
+
+    at: float
+    kind: str               # "player", "claimed" (a name not verified), "hidden" or "anonymous"
+    sender: str | None      # the nickname for "player" and "claimed"
+
+
+@dataclass(frozen=True)
 class Play:
     """The play statistics from the status snapshot (BS3D-API#13)."""
 
@@ -92,6 +101,7 @@ class Play:
     latest: tuple = ()                  # Clear rows, newest first
     recent: tuple = ()                  # Clear rows with the unfinished attempts (BS3D-API#15)
     recent_players: tuple = ()          # RecentPlayer rows, by their last submission
+    notes_recent: tuple | None = None   # Note rows, newest first; None from a service before #15
     month: str = ""                     # "2026-10"
     top_month: tuple = ()               # Player rows
     top_all: tuple = ()
@@ -130,6 +140,7 @@ class State:
     play: Play | None = None
     box: Box | None = None
     alerts: tuple = field(default=())
+    unseen: tuple = ()                  # the notes after the last acknowledged (#8), newest first
 
     @property
     def errors(self):

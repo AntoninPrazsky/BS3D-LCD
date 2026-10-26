@@ -1,10 +1,11 @@
-"""The push's easing, the siren's level curve and the button's presses (#2, #3)."""
+"""The push's easing, the siren's and the knock's level curves and the button's presses
+(#2, #3, #8)."""
 
 import unittest
 
 from bs3d_lcd.easing import EASINGS, smootherstep
 from bs3d_lcd.status.button import LONG, SHORT, PressTracker
-from bs3d_lcd.status.siren import Siren
+from bs3d_lcd.status.siren import Knock, Siren
 
 STEPS = [i / 1000 for i in range(1001)]
 
@@ -88,6 +89,43 @@ class SirenTest(unittest.TestCase):
     def test_refuses_a_swing_that_misses_one(self):
         with self.assertRaises(ValueError):
             Siren(1.05, 1.2)
+
+
+class KnockTest(unittest.TestCase):
+    def levels(self, knock, start, end, step=0.001):
+        n = round((end - start) / step)
+        return [knock.level(start + k * step) for k in range(n + 1)]
+
+    @staticmethod
+    def dips(levels):
+        return sum(1 for a, b in zip(levels, levels[1:]) if a == 1.0 and b < 1.0)
+
+    def test_two_dips_then_still_every_period(self):
+        knock = Knock(0.9, dip=0.25, gap=0.15, dips=2, period=4.0)
+        self.assertEqual(knock.level(0.0), 1.0)
+        knock.start(0.0)
+        levels = self.levels(knock, 0.0, 12.0)
+        self.assertEqual(self.dips([1.0] + levels), 6)
+        self.assertAlmostEqual(min(levels), 0.9, places=3)
+        self.assertEqual(max(levels), 1.0)
+        self.assertEqual(set(self.levels(knock, 0.65, 3.99)), {1.0})     # still after the second dip
+        self.assertLess(knock.level(4.125), 0.95)                        # and again
+
+    def test_never_jumps_and_a_dip_under_way_is_finished(self):
+        knock = Knock()
+        knock.start(1.0)
+        knock.stop(1.1)                     # in the middle of the first dip
+        levels = self.levels(knock, 0.0, 3.0)
+        self.assertLess(max(abs(b - a) for a, b in zip(levels, levels[1:])), 0.01)
+        self.assertLess(knock.level(1.2), 1.0)
+        self.assertEqual(knock.level(1.26), 1.0)
+        self.assertEqual(set(self.levels(knock, 1.26, 6.0)), {1.0})    # no second dip
+
+    def test_refuses_what_is_no_knock(self):
+        with self.assertRaises(ValueError):
+            Knock(1.1)
+        with self.assertRaises(ValueError):
+            Knock(dip=1.0, gap=1.0, dips=3, period=4.0)
 
 
 class PressTrackerTest(unittest.TestCase):

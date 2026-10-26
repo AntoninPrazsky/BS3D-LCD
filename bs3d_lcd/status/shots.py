@@ -1,8 +1,9 @@
 """Screenshots of the status pages, from made-up data, without the hardware.
 
 ``status-PAGE.png`` is each page under the strip as the panel shows it;
-``status-push.gif`` is a push from one page to the next and
-``status-siren.gif`` the alarm. The data are the demo's: made-up numbers and
+``status-push.gif`` is a push from one page to the next,
+``status-siren.gif`` the alarm and ``status-note.gif`` the knock for a new
+note. The data are the demo's: made-up numbers and
 made-up nicknames, at a fixed time.
 """
 
@@ -16,7 +17,8 @@ from . import strip
 from .demo import ALERTS, DemoSource
 from .director import Director
 from .pages import (ActivityPage, AlertPage, AllTimePage, BoxPage, LatestPlayersPage, LatestScoresPage,
-                    ServerPage, TodayPage, TopPlayersPage, WarningsPage, stopped)
+                    NotePage, ServerPage, TodayPage, TopPlayersPage, WarningsPage, stopped)
+from .seen import Seen
 from .siren import Siren
 from .state import Alert, State
 from .ui import UI
@@ -30,10 +32,11 @@ def duty(panel, gray):
     return screenshots.average([panel.dither.frame(gray, n) for n in range(panel.dither.phases)])
 
 
-def demo_state(alerts=()):
+def demo_state(alerts=(), unseen=0):
+    """The demo's state at ``WALL``, with the ``unseen`` newest of its notes not yet acknowledged."""
     state = DemoSource(start=0.0, wall=WALL, script=False).state(0.0)
     return State(now=state.now, server=state.server, play=state.play, box=state.box,
-                 alerts=tuple(alerts))
+                 alerts=tuple(alerts), unseen=state.play.notes_recent[:unseen])
 
 
 def alert(key, minutes_ago, acknowledged=False):
@@ -53,6 +56,7 @@ def shots(ui):
     calm = demo_state()
     warned = demo_state([alert("backup-old", 64)])
     failing = demo_state([alert("api-down", 3), alert("backup-old", 64)])
+    noted = demo_state(unseen=1)
     top = TopPlayersPage(ui)
     latest, players = LatestScoresPage(ui), LatestPlayersPage(ui)
     return [
@@ -67,6 +71,7 @@ def shots(ui):
         ("box", screen(ui, calm, BoxPage(ui), 1.0, 7, 8)),
         ("warnings", screen(ui, warned, WarningsPage(ui), 1.0, 1, 5)),
         ("alert", screen(ui, failing, AlertPage(ui), 1.0, -1, 5)),
+        ("note", screen(ui, noted, NotePage(ui), 1.0, -1, 8)),
         ("stopped", stopped(ui, WALL, screen(ui, calm, ServerPage(ui), 1.0, 0, 5)).convert("L")),
     ]
 
@@ -108,4 +113,13 @@ def write(out_dir, panel, pitch=10, colors=screenshots.LCD_COLORS, gifs=True):
                  for gray, level in frames(siren, times)]
     screenshots.save_gif(animation, os.path.join(out_dir, "status-siren.gif"), fps)
     written.append("status-siren.gif")
+
+    # The knock for a new note: one period, its two dips, at the siren's rate
+    noted = DemoSource(start=0.0, wall=WALL, script=False)
+    knock = Director(ui, noted.state, [ServerPage(ui)], seen=Seen(at=noted.notes_recent(0.0)[1].at))
+    times = [k / fps for k in range(round(knock.knock.period * fps))]
+    animation = [screenshots.lcd(duty(panel, gray), panel.aspect, pitch // 2, colors, level)
+                 for gray, level in frames(knock, times)]
+    screenshots.save_gif(animation, os.path.join(out_dir, "status-note.gif"), fps)
+    written.append("status-note.gif")
     return written

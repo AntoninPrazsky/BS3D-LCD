@@ -1,4 +1,5 @@
-"""The alarm: the whole panel pulses by swinging its drive voltage V0 (#3)."""
+"""The alarm: the whole panel pulses by swinging its drive voltage V0 (#3); and the
+signal for a new note, which knocks rather than wails (#8)."""
 
 import math
 
@@ -65,3 +66,58 @@ class Siren:
         if envelope == 0:
             return 1.0
         return 1.0 + envelope * (self.wave(now - self._t0) - 1.0)
+
+
+class Knock:
+    """The V0 level while a note is unacknowledged (#8): ``dips`` short dips down to
+    ``low``, then still, every ``period`` s.
+
+    It is the siren's mechanism, but a knock rather than a swing, so it reaches
+    across the room without passing for an error. Each dip is half a sine, so it
+    leaves 1.0 and comes back without a jump, and a dip under way when it stops
+    is finished. ``level(now)`` is 1.0 while it is silent.
+    """
+
+    def __init__(self, low=0.9, dip=0.25, gap=0.15, dips=2, period=4.0):
+        if not 0 < low <= 1.0:
+            raise ValueError(f"a knock dips below 1.0, got {low}")
+        if dips * (dip + gap) > period:
+            raise ValueError("the dips do not fit in the period")
+        self.low, self.dip, self.gap, self.dips, self.period = low, dip, gap, dips, period
+        self.on = False
+        self._t0 = 0.0
+        self._until = None          # a dip under way when it stopped ends then
+
+    def depth(self, t):
+        """How far down, 0 to 1, ``t`` s after it started."""
+        p = t % self.period
+        for k in range(self.dips):
+            start = k * (self.dip + self.gap)
+            if start <= p < start + self.dip:
+                return math.sin(math.pi * (p - start) / self.dip)
+        return 0.0
+
+    def _dip_end(self, now):
+        p = (now - self._t0) % self.period
+        for k in range(self.dips):
+            start = k * (self.dip + self.gap)
+            if start <= p < start + self.dip:
+                return now + (start + self.dip - p)
+        return now
+
+    def start(self, now):
+        if self.on:
+            return
+        if self._until is None or now >= self._until:
+            self._t0 = now          # a fresh start; otherwise the knock goes on
+        self.on, self._until = True, None
+
+    def stop(self, now):
+        if not self.on:
+            return
+        self.on, self._until = False, self._dip_end(now)
+
+    def level(self, now):
+        if not self.on and (self._until is None or now >= self._until):
+            return 1.0
+        return 1.0 - (1.0 - self.low) * self.depth(now - self._t0)

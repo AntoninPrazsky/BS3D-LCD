@@ -44,7 +44,7 @@ The logo animation step by step: a bubble is shot up and pops, its ring reveals 
 
 ### The status display
 
-Pages take turns under a strip that always shows whether the server is online and what time it is (with a blinking colon, so a frozen panel is recognisably frozen). Each page is pushed out by the next one with a slide that starts slowly and brakes at the end. When something fails, the alert page takes over and the whole panel pulses like a siren until the error clears or the button is held. The data here are made up.
+Pages take turns under a strip that always shows whether the server is online and what time it is (with a blinking colon, so a frozen panel is recognisably frozen). Each page is pushed out by the next one with a slide that starts slowly and brakes at the end. When something fails, the alert page takes over and the whole panel pulses like a siren until the error clears or the button is held. When a player sends a note, the NEW NOTE page takes over and the panel knocks, two short dips every 4 s, until the button is held. The data here are made up.
 
 | | |
 |:---:|:---:|
@@ -54,6 +54,7 @@ Pages take turns under a strip that always shows whether the server is online an
 | <img src="docs/screenshots/status-top-roll.png" alt="top players rolling"><br>…with the nicknames as the game shows them | <img src="docs/screenshots/status-all.png" alt="all time page"><br>All time: players, clears, boards cleared, notes |
 | <img src="docs/screenshots/status-box.png" alt="the Pi page"><br>The Pi: temperature, fan, load, space, backup | <img src="docs/screenshots/status-warnings.png" alt="warnings page"><br>Warnings, with how long each has stood |
 | <img src="docs/screenshots/status-alert.png" alt="alert page"><br>An error: what, since when; the panel pulses | <img src="docs/screenshots/status-stopped.png" alt="stopped"><br>Stopped: over the last picture, which stays |
+| <img src="docs/screenshots/status-note.png" alt="new note page"><br>A new note: who sent it and when, never its text | <img src="docs/screenshots/status-note.gif" alt="the knock for a new note"><br>The knock for a new note |
 | <img src="docs/screenshots/status-push.gif" alt="the push between pages"><br>The push between two pages | <img src="docs/screenshots/status-siren.gif" alt="the siren"><br>The siren |
 
 ### Greyscale on a 1-bit panel
@@ -148,20 +149,22 @@ Values found on the OPEN-SMART panel, all of them the defaults:
 .venv/bin/bs3d-lcd status --demo --page-time 4      # pages change faster
 .venv/bin/bs3d-lcd compare slide                    # push lengths and curves, labelled
 .venv/bin/bs3d-lcd compare siren                    # siren depths, shapes and periods
+.venv/bin/bs3d-lcd compare note                     # depths and periods of the knock for a new note
 .venv/bin/bs3d-lcd compare credits                  # speeds of the Top players roll
 ```
 
 The logo plays first and is pushed out by the first page.
 
-- **What it reads**, each in its own thread and never the service's database: the `bs3d-api` unit (`systemctl show`), its `GET /v1/health`, the `cloudflared` unit and its readiness, the release the `/opt/bs3d-api/current` link points to, the nightly backup's unit and timer, the service's journal (`journalctl -f`, so the user needs the `adm` or `systemd-journal` group), the Pi's temperature, throttling, fan, load, memory and free space, and optionally the same health check through Cloudflare. The play statistics come from BS3D-API's status snapshot ([BS3D-API#13](https://github.com/AntoninPrazsky/BS3D-API/issues/13)), `/run/bs3d-status/status.json`, which its `bs3d-api-status.service` rewrites every 15 s for the group `bs3d-status`: counts, today's play, the newest clears and since [BS3D-API#15](https://github.com/AntoninPrazsky/BS3D-API/issues/15) (0.1.32) the newest submissions with the unfinished attempts and the players who played last, the Top players and the backup records, never a hash or a hidden player. Without it the play pages are left out and the strip warns NO STATS.
+- **What it reads**, each in its own thread and never the service's database: the `bs3d-api` unit (`systemctl show`), its `GET /v1/health`, the `cloudflared` unit and its readiness, the release the `/opt/bs3d-api/current` link points to, the nightly backup's unit and timer, the service's journal (`journalctl -f`, so the user needs the `adm` or `systemd-journal` group), the Pi's temperature, throttling, fan, load, memory and free space, and optionally the same health check through Cloudflare. The play statistics come from BS3D-API's status snapshot ([BS3D-API#13](https://github.com/AntoninPrazsky/BS3D-API/issues/13)), `/run/bs3d-status/status.json`, which its `bs3d-api-status.service` rewrites every 15 s for the group `bs3d-status`: counts, today's play, the newest clears and since [BS3D-API#15](https://github.com/AntoninPrazsky/BS3D-API/issues/15) (0.1.32) the newest submissions with the unfinished attempts, the players who played last and when the newest notes came and who sent them, the Top players and the backup records, never a hash, a hidden player or a note's text. Without it the play pages are left out and the strip warns NO STATS.
 - **When it alerts:** the table of conditions is in [#4](https://github.com/AntoninPrazsky/BS3D-LCD/issues/4). Anything that makes the server unreachable sounds the siren: the service down for 20 s, its health failing three checks in a row, the tunnel down for a minute, or the check through Cloudflare failing three times. So do a failed backup or copy, an error the service logs, a nearly full disk, under-voltage and over 85 °C. The rest are warnings: an old copy, statistics older than 2 minutes, refusals that point at something to update (an unknown board, a game version, the notes' cap), at someone probing, or at too many.
 - **The pages:** Server, Warnings (when there are any), Today, Latest scores, Latest players, Activity, Top players, All time and the Pi. A page with nothing to say is left out. Latest scores and Latest players list up to nine rows, three at a time ([#7](https://github.com/AntoninPrazsky/BS3D-LCD/issues/7)): each three stay 4 s, the next three push up from below, and a column along the right edge shows which three are on. Latest scores lists the unfinished attempts too, with a grey 0 for their stars; from a BS3D-API before 0.1.32 it shows the newest clears alone, and Latest players is left out.
+- **A new note** ([#8](https://github.com/AntoninPrazsky/BS3D-LCD/issues/8)) takes over as an error does, a step below it. The NEW NOTE page says who sent the newest note, as the admin page's Notes tab names them (a name not verified with a `?`, a hidden player only as such), how many came and when; an envelope stands in the strip, and the panel knocks: two short dips of the contrast every 4 s, which reach across the room without passing for the siren. A long hold acknowledges every note the snapshot lists. While an error sounds, the siren and the alert page come first, and one hold acknowledges both. There are no quiet hours: without a backlight, the knock shows nothing in a dark room. Notes are told apart by when they came, never by their id, which BS3D-API may give again after a note is deleted. The newest one acknowledged is kept in `/var/lib/bs3d-lcd/notes-seen`, so a restart does not knock again for it; on the first start every note already there counts as seen. A BS3D-API before 0.1.32 lists no notes, and nothing knocks.
 - **Settings:** `--config PATH`, else `/etc/bs3d-lcd/config.toml`, else `~/.config/bs3d-lcd/config.toml`; [`deploy/config.example.toml`](deploy/config.example.toml) lists them all with their defaults. The public address for the check through Cloudflare goes only there.
-- **`--demo`** makes the numbers change as time goes on, a warning come and go, and every 5 minutes an error sound the siren for a minute.
+- **`--demo`** makes the numbers change as time goes on, a warning come and go, every 5 minutes an error sound the siren for a minute, and once in each 5 minutes a note knock until it is acknowledged.
 
-- **The button**, between GPIO26 (pin 37) and GND (pin 39), needs no resistor: the line's pull-up holds it high. A short press (released within 0.8 s) shows the next page, during the siren too. A hold of 1.5 s switches the alarm off; while the siren sounds, a bar along the bottom fills as you hold. The error then stays on the Warnings page until it clears, and a new error sounds again. `--button none` runs without it.
-- **The keyboard**, in a terminal: Enter is a short press, `a` + Enter a long hold; in the demo `e` or `w` + Enter raises or clears an error or a warning.
-- **Tuning:** `--slide`, `--easing`, `--page-time`, `--siren`, `--siren-period`, `--siren-shape`, `--credits-speed`, `--short-press`, `--long-press`; `bs3d-lcd status --help` lists them.
+- **The button**, between GPIO26 (pin 37) and GND (pin 39), needs no resistor: the line's pull-up holds it high. A short press (released within 0.8 s) shows the next page, during the siren too. A hold of 1.5 s switches the alarm off and acknowledges the notes; while the siren sounds or a note knocks, a bar along the bottom fills as you hold. The error then stays on the Warnings page until it clears, and a new error sounds again. `--button none` runs without it.
+- **The keyboard**, in a terminal: Enter is a short press, `a` + Enter a long hold; in the demo `e` or `w` + Enter raises or clears an error or a warning, and `n` + Enter sends a note.
+- **Tuning:** `--slide`, `--easing`, `--page-time`, `--siren`, `--siren-period`, `--siren-shape`, `--note-depth`, `--note-period`, `--credits-speed`, `--short-press`, `--long-press`; `bs3d-lcd status --help` lists them.
 
 It logs the frame rate once a minute (`--report`). On a Pi 5 it holds 200 fps, using about 12 % of one core; with the sources reading, about one frame a minute comes late.
 
@@ -181,7 +184,7 @@ For the play statistics, first install BS3D-API's status snapshot and let the di
 sudo /opt/bs3d-api/current/deploy/install-status.sh bs3d-lcd
 ```
 
-`install.sh` puts the code in `/opt/bs3d-lcd` with its own venv, adds the system user `bs3d-lcd` (no home, no login; in the group `bs3d-status` when it exists) and installs [`deploy/bs3d-lcd.service`](deploy/bs3d-lcd.service), which runs the display as that user with only the `spi`, `gpio`, `video` and `systemd-journal` groups. The first install makes `/etc/bs3d-lcd/config.toml` from your `~/.config/bs3d-lcd/config.toml`, or from the example; later ones leave it alone. To update: `git pull`, then `sudo deploy/install.sh` again.
+`install.sh` puts the code in `/opt/bs3d-lcd` with its own venv, adds the system user `bs3d-lcd` (no home, no login; in the group `bs3d-status` when it exists) and installs [`deploy/bs3d-lcd.service`](deploy/bs3d-lcd.service), which runs the display as that user with only the `spi`, `gpio`, `video` and `systemd-journal` groups, and one folder of its own to write, `/var/lib/bs3d-lcd` (`StateDirectory=`), for the newest note acknowledged. The first install makes `/etc/bs3d-lcd/config.toml` from your `~/.config/bs3d-lcd/config.toml`, or from the example; later ones leave it alone. To update: `git pull`, then `sudo deploy/install.sh` again.
 
 - **At boot** the logo comes up without waiting for the network, then the pages, which say STARTING until the first readings arrive.
 - **A frozen panel never passes for a working one.** The render loop pats systemd's watchdog; if it stalls for 10 s, systemd restarts the service, which sets the panel up afresh. The blinking colon of the clock shows it too.
@@ -194,7 +197,7 @@ sudo /opt/bs3d-api/current/deploy/install-status.sh bs3d-lcd
 .venv/bin/bs3d-lcd screenshots --out /tmp/shots --scenes planet --gif planet
 ```
 
-No hardware or SPI is needed. Each scene gets `NAME.png` (simulated LCD), `NAME-gray.png` (the averaged greyscale) and `NAME-frame.png` (one 1-bit frame); `--gif` adds animations. The status pages come as `status-*.png` with two animations, from made-up data (`--no-status` leaves them out).
+No hardware or SPI is needed. Each scene gets `NAME.png` (simulated LCD), `NAME-gray.png` (the averaged greyscale) and `NAME-frame.png` (one 1-bit frame); `--gif` adds animations. The status pages come as `status-*.png` with three animations, from made-up data (`--no-status` leaves them out).
 
 ### Tests
 

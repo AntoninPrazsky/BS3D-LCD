@@ -513,6 +513,47 @@ class AlertPage(Page):
         return image
 
 
+class NotePage(Page):
+    """A note came (#8): who sent the newest, how many came since the last
+    acknowledgement, and when. Never its text: the snapshot holds none, and the
+    panel faces a room."""
+
+    name = "note"
+
+    @staticmethod
+    def sender(note):
+        """(the sender as the Notes tab names them, a line about the name)."""
+        if note.kind == "player" and note.sender:
+            return note.sender, ""
+        if note.kind == "claimed" and note.sender:
+            return note.sender + "?", "name not verified"
+        if note.kind == "hidden":
+            return "hidden player", "the name is hidden"
+        return "anonymous", "no name given"
+
+    def render(self, state, t):
+        ui, image = self.ui, page(WIDTH, HEIGHT)
+        notes = state.unseen
+        image.paste(255, (0, 0, WIDTH, 11))
+        ui.bold.draw(image, 3, 2, "NEW NOTES" if len(notes) > 1 else "NEW NOTE", fill=0)
+        if not notes:
+            return image
+        if len(notes) > 1:
+            # The snapshot lists the ten newest: ten unseen may be more
+            count = str(len(notes)) if len(notes) < 10 else "10+"
+            ui.body.draw(image, WIDTH - 3, 2, count, fill=0, align="right")
+        name, about = self.sender(notes[0])
+        font = fit((ui.big, ui.name, ui.bold), name, WIDTH - 4)
+        top = 16 if font is ui.big else 19
+        font.draw(image, WIDTH // 2, top, name, align="center")
+        if about:
+            ui.tiny.draw(image, WIDTH // 2, 35, about, fill=GREY, align="center")
+        came = time.strftime("%H:%M", time.localtime(notes[0].at))
+        ui.tiny.draw(image, WIDTH // 2, 47, f"{'newest ' if len(notes) > 1 else ''}at {came} "
+                                            f"({fmt_age(state.now - notes[0].at)} ago)", align="center")
+        return image
+
+
 class RecoveredPage(Page):
     """Shown once when the last error clears: what it was and how long it lasted."""
 

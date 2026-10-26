@@ -314,6 +314,9 @@ def status(at, refusals=None, offbox=None, offsite=None, recent=True):
         data["recent_players"] = [
             {"player": "Bob", "last_at": iso(at - 30), "clears": 0, "attempts": 1, "first_day": True},
             {"player": "Ann", "last_at": iso(at - 60), "clears": 2, "attempts": 0, "first_day": False}]
+        data["notes_recent"] = [
+            {"at": iso(at - 20), "from_kind": "claimed", "from": "Kuba 77"},
+            {"at": iso(at - 90), "from_kind": "hidden", "from": None}]
     return data
 
 
@@ -349,11 +352,13 @@ class SnapshotTest(MonitorCase):
         self.assertEqual([(p.player, p.clears, p.attempts, p.first_day) for p in play.recent_players],
                          [("Bob", 0, 1, True), ("Ann", 2, 0, False)])
         self.assertAlmostEqual(play.recent_players[1].last_at, T0 - 60, places=3)
+        self.assertEqual([(n.kind, n.sender) for n in play.notes_recent], [("claimed", "Kuba 77"), ("hidden", None)])
+        self.assertAlmostEqual(play.notes_recent[0].at, T0 - 20, places=3)
 
     def test_a_snapshot_from_before_the_newest_submissions_reads_them_as_empty(self):
         self.snapshot = status(T0, recent=False)
         play = self.tick().play
-        self.assertEqual((play.recent, play.recent_players), ((), ()))
+        self.assertEqual((play.recent, play.recent_players, play.notes_recent), ((), (), None))
         self.assertEqual(len(play.latest), 1)
 
     def test_old_statistics_are_a_warning_while_the_service_runs(self):

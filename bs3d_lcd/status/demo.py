@@ -2,15 +2,16 @@
 
 The numbers change as time goes on, and a script makes things go wrong now
 and then: a warning, and an error that sounds the siren until it is
-acknowledged or clears by itself. ``toggle()`` raises and clears them by
-hand. All names are made up.
+acknowledged or clears by itself; and once a cycle a player sends a note,
+which knocks until it is acknowledged. ``toggle()`` raises and clears the
+alerts by hand, ``add_note()`` sends a note. All names are made up.
 """
 
 import math
 import random
 import time
 
-from .state import ERROR, WARNING, Alert, Box, Clear, Play, Player, RecentPlayer, Server, State
+from .state import ERROR, WARNING, Alert, Box, Clear, Note, Play, Player, RecentPlayer, Server, State
 
 NAMES = ("Kateřina", "Bublinka", "Jiří", "Šárka_7", "Ondra-K", "Łukasz", "Žaneta",
          "Ægir", "Tomáš", "Mia", "Ľubo", "Zdeněk", "Øyvind", "Bára", "Kuba 77", "Eliška",
@@ -20,6 +21,9 @@ NAMES = ("Kateřina", "Bublinka", "Jiří", "Šárka_7", "Ondra-K", "Łukasz", "
 CYCLE = 300.0
 WARNING_AT, WARNING_FOR = 50.0, 120.0
 ERROR_AT, ERROR_FOR = 110.0, 60.0
+NOTE_AT = 230.0
+# Who sends the notes, in turn: (kind, sender); a claimed name is not verified
+SENDERS = (("player", "Bublinka"), ("claimed", "Kuba 77"), ("anonymous", None), ("player", "Šárka_7"))
 
 ALERTS = {
     "backup-old": (WARNING, "BACKUP OLD", "last copy 27h ago"),
@@ -53,6 +57,7 @@ class DemoSource:
         self.base_hours = [max(0, round(18 + 14 * math.sin((h - 15) / 24 * 2 * math.pi)
                                         + rng.uniform(-6, 6))) for h in range(24)]
         self.manual = {}            # key -> (on, since) set by toggle()
+        self.notes = [self.wall0 - h * 3600 for h in (3, 26, 50)]    # sent before the start
 
     def wall(self, now):
         return self.wall0 + (now - self.start)
@@ -61,6 +66,19 @@ class DemoSource:
         """Raise the alert ``key`` (a key of ``ALERTS``), or clear it."""
         on = self._scripted(key, now) if key not in self.manual else self.manual[key][0]
         self.manual[key] = (not on, self.wall(now))
+
+    def add_note(self, now):
+        """A player sends a note at ``now``."""
+        self.notes.append(self.wall(now))
+
+    def notes_recent(self, now):
+        """The ten newest notes at ``now``, newest first, the scripted ones among them."""
+        times = [t for t in self.notes if t <= self.wall(now)]
+        if self.script and now - self.start >= NOTE_AT:
+            times += [self.wall0 + NOTE_AT + i * CYCLE
+                      for i in range(int((now - self.start - NOTE_AT) // CYCLE) + 1)]
+        times = sorted(times, reverse=True)[:10]
+        return tuple(Note(t, *SENDERS[int(t) % len(SENDERS)]) for t in times)
 
     def _scripted(self, key, now):
         if not self.script:
@@ -118,7 +136,7 @@ class DemoSource:
         play = Play(at=wall - (wall % 15), hours=hours, clears_today=sum(hours) // 3,
                     attempts_today=sum(hours) // 9, players_today=11, new_players_today=2,
                     seconds_today=sum(hours) * 47.0, last_score_at=last, latest=latest,
-                    recent=recent, recent_players=players,
+                    recent=recent, recent_players=players, notes_recent=self.notes_recent(now),
                     month=time.strftime("%Y-%m", time.localtime(wall)),
                     top_month=self.top_month, top_all=self.top_all,
                     players=137, clears=4_812, attempts=1_377, boards=176, boards_cleared=149, notes=23)

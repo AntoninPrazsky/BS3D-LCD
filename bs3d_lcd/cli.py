@@ -15,7 +15,7 @@ from .greyscale import Dither
 from .scene import Panel, run_scenes
 
 COMMANDS = ("demo", "status", "sweep", "compare", "screenshots")
-COMPARE = ("fps", "phases", "gamma", "slide", "siren", "credits")
+COMPARE = ("fps", "phases", "gamma", "slide", "siren", "note", "credits")
 
 
 def int_auto(value):
@@ -148,6 +148,10 @@ def parsers():
                    help="one swing of the siren (default 1.5)")
     g.add_argument("--siren-shape", default="siren", choices=("siren", "sine"),
                    help="siren: quick rise, slow fall (default); sine: even")
+    g.add_argument("--note-depth", type=float, default=0.10, metavar="DEPTH",
+                   help="a new note knocks: two dips down to 1 - DEPTH (default 0.10)")
+    g.add_argument("--note-period", type=float, default=4.0, metavar="SECONDS",
+                   help="the knock comes again after this (default 4)")
     g.add_argument("--button", type=button_line, default=26, metavar="GPIO",
                    help="BCM GPIO of the push button to GND (default 26, pin 37; none = "
                         "no button)")
@@ -170,12 +174,13 @@ def parsers():
                             "display")
     c.add_argument("what", choices=COMPARE,
                    help="fps, phases, gamma: the greyscale; slide: the push between pages; "
-                        "siren: the alarm; credits: the speed of the Top players roll")
+                        "siren: the alarm; note: the knock for a new note; credits: the speed of "
+                        "the Top players roll")
     c.add_argument("--hold", type=float, default=None,
                    help="seconds per value (default 6; slide: three pushes; credits: 15)")
     c.add_argument("--values", type=lambda v: [float(x) for x in v.split(",")],
                    metavar="A,B,...", help="values instead of the built-in ones (slide: "
-                                           "lengths; siren: depths; credits: speeds)")
+                                           "lengths; siren and note: depths; credits: speeds)")
 
     r = sub.add_parser("screenshots", parents=[greyscale, show],
                        help="render PNG screenshots of the scenes; no hardware needed")
@@ -238,6 +243,8 @@ def keyboard(source=None):
             elif line in ("e", "w") and source is not None:
                 key = "api-down" if line == "e" else "backup-old"
                 out.append(lambda now, key=key: source.toggle(key, now))
+            elif line == "n" and source is not None:
+                out.append(source.add_note)
     return commands
 
 
@@ -258,7 +265,8 @@ def run_status(lcd, panel, args, settings=None):
     from .status.demo import DemoSource
     from .status.director import Director, run
     from .status.pages import rotation
-    from .status.siren import Siren
+    from .status.seen import Seen, path_from_environment
+    from .status.siren import Knock, Siren
     from .status.ui import UI
 
     ui = UI()
@@ -284,7 +292,11 @@ def run_status(lcd, panel, args, settings=None):
                         easing=EASINGS[args.easing],
                         siren=Siren(1 - args.siren, 1 + args.siren, args.siren_period,
                                     args.siren_shape),
-                        tracker=PressTracker(args.short_press, args.long_press), logo=logo)
+                        tracker=PressTracker(args.short_press, args.long_press), logo=logo,
+                        knock=Knock(1 - args.note_depth, period=args.note_period),
+                        # Under systemd the newest note acknowledged outlives a restart (#8)
+                        seen=Seen(None if demo else path_from_environment(),
+                                  log=lambda line: print(line, flush=True)))
     button = None
     if args.button is not None:
         try:
@@ -297,7 +309,8 @@ def run_status(lcd, panel, args, settings=None):
     commands = keyboard(demo) if sys.stdin.isatty() else None
     if commands:
         print("Keys (+ Enter): Enter = short press, a = long hold"
-              + (", e = error on/off, w = warning on/off." if demo else "."), flush=True)
+              + (", e = error on/off, w = warning on/off, n = a new note." if demo else "."),
+              flush=True)
     # systemctl stop: the same clean end as Ctrl+C.
     def terminate(signum, frame):
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
@@ -381,7 +394,7 @@ def main(argv=None):
         if args.command == "sweep":
             from .calibrate import run_sweep
             run_sweep(lcd, panel, args.what, args.contrast, args.ratio, args.step, args.hold)
-        elif args.command == "compare" and args.what in ("slide", "siren", "credits"):
+        elif args.command == "compare" and args.what in ("slide", "siren", "note", "credits"):
             from .status.compare import run_compare
             run_compare(lcd, panel, args.what, args.values, args.hold)
         elif args.command == "compare":
