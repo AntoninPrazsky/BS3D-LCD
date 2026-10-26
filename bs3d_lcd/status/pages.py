@@ -14,6 +14,7 @@ import time
 from PIL import Image, ImageChops
 
 from . import strip
+from ..easing import smootherstep
 from .ui import CUP_SHADES, GREY, draw_icon, fit, fmt_age, fmt_int, fmt_span, icon, page, row
 
 WIDTH = 128
@@ -97,37 +98,147 @@ class TodayPage(Page):
         return image
 
 
-class LatestPage(Page):
-    """The newest clears: who, which level, the stars and the score, how long ago.
+class Paged(Page):
+    """A list of up to ``MAX`` rows, three to a set, the sets taking turns (#7).
 
-    Three of them fill the page; a title would leave room for two.
+    Each set stays ``turn`` s, and the next one pushes up from below in
+    ``slide`` s with the same curve as the push between pages. While there is
+    more than one set, a column along the right edge shows which one is on.
+    The page stays as long as its sets take, and is left out with no rows.
+    """
+
+    ROWS, MAX, PITCH, TOP = 3, 9, 18, 2
+    BAR = 2                         # the column's width along the right edge
+
+    def __init__(self, ui, turn=4.0, slide=0.5):
+        super().__init__(ui)
+        self.turn, self.slide = turn, slide
+        self.redraw = 25            # for the push between sets; each set is drawn once a second
+        self._built = None          # (key, the sets one under the other)
+
+    def rows(self, state):
+        raise NotImplementedError
+
+    def draw_row(self, image, y, row, state, shade, right):
+        """Draw ``row`` in two lines from ``y``, its right edge at ``right``."""
+        raise NotImplementedError
+
+    def sets(self, state):
+        rows = tuple(self.rows(state))[:self.MAX]
+        return [rows[i:i + self.ROWS] for i in range(0, len(rows), self.ROWS)]
+
+    def skip(self, state):
+        return not self.rows(state)
+
+    def duration(self, state, default):
+        count = len(self.sets(state))
+        return default if count <= 1 else count * self.turn
+
+    def _tall(self, state, sets):
+        # The ages change once a second, and the shade when the statistics grow old
+        key = (tuple(sets), int(state.now), state.play.at if state.play else None)
+        if self._built is None or self._built[0] != key:
+            right = WIDTH - 1 - (self.BAR + 3 if len(sets) > 1 else 0)
+            shade = _shade(state.play.at if state.play else None, state.now)
+            tall = page(WIDTH, HEIGHT * len(sets))
+            for i, rows in enumerate(sets):
+                for k, row in enumerate(rows):
+                    self.draw_row(tall, i * HEIGHT + self.TOP + k * self.PITCH, row, state, shade,
+                                  right)
+            self._built = key, tall
+        return self._built[1]
+
+    def position(self, count, t):
+        """(the set on, the offset in rows into the sets) ``t`` s after the page came in."""
+        index = min(int(max(t, 0) / self.turn), count - 1)
+        offset = index * HEIGHT
+        into = t - index * self.turn
+        if index and into < self.slide:
+            offset -= round(HEIGHT * (1 - smootherstep(into / self.slide)))
+        return index, offset
+
+    def render(self, state, t):
+        sets = self.sets(state)
+        if not sets:
+            return page(WIDTH, HEIGHT)
+        index, offset = self.position(len(sets), t)
+        image = self._tall(state, sets).crop((0, offset, WIDTH, offset + HEIGHT))
+        if len(sets) > 1:
+            self._column(image, index, len(sets))
+        return image
+
+    def _column(self, image, index, count):
+        gap = 2
+        height = (HEIGHT - gap * (count - 1)) // count
+        for i in range(count):
+            y = i * (height + gap)
+            image.paste(255 if i == index else GREY, (WIDTH - self.BAR, y, WIDTH, y + height))
+
+
+class LatestScoresPage(Paged):
+    """The newest scores (#7): who, which level, the score, the stars or, for an
+    unfinished attempt, a grey 0, and how long ago.
+
+    From a service before BS3D-API#15 the snapshot has only the newest clears,
+    and the page shows those.
     """
 
     name = "latest"
-    COUNT = 3
-    PITCH = 18
 
-    def skip(self, state):
-        return not (state.play and state.play.latest)
+    def rows(self, state):
+        play = state.play
+        return (play.recent or play.latest) if play else ()
 
-    def render(self, state, t):
-        ui, image, play = self.ui, page(WIDTH, HEIGHT), state.play
-        shade = _shade(play.at, state.now)
-        y = 2
-        for clear in play.latest[:self.COUNT]:
-            stars = ui.tiny.width(str(clear.stars)) + 2 + icon("star").width
-            room = WIDTH - 2 - stars - 4
-            name = fit((ui.body, ui.tiny), clear.player, room)
-            name.draw(image, 1, y + ui.body.cap - name.cap, clear.player, fill=shade)
-            x = WIDTH - 1 - stars
-            x += ui.tiny.draw(image, x, y + 1, str(clear.stars), fill=shade) + 2
-            draw_icon(image, x, y + 1, "star", fill=shade)
-            ago = fmt_age(state.now - clear.at)
-            detail = f"{clear.level}  {fmt_int(clear.score)}"
-            ui.tiny.draw(image, 1, y + 10, detail, fill=shade)
-            ui.tiny.draw(image, WIDTH - 1, y + 10, ago + " ago", fill=GREY, align="right")
-            y += self.PITCH
-        return image
+    def draw_row(self, image, y, clear, state, shade, right):
+        ui = self.ui
+        # An unfinished attempt (BS3D-API#8) has no stars: its 0 and star are grey
+        mark = shade if clear.stars else GREY
+        stars = ui.tiny.width(str(clear.stars)) + 2 + icon("star").width
+        name = fit((ui.body, ui.tiny), clear.player, right - 1 - stars - 4)
+        name.draw(image, 1, y + ui.body.cap - name.cap, clear.player, fill=shade)
+        x = right - stars
+        x += ui.tiny.draw(image, x, y + 1, str(clear.stars), fill=mark) + 2
+        draw_icon(image, x, y + 1, "star", fill=mark)
+        ui.tiny.draw(image, 1, y + 10, f"{clear.level}  {fmt_int(clear.score)}", fill=shade)
+        ui.tiny.draw(image, right, y + 10, fmt_age(state.now - clear.at) + " ago", fill=GREY,
+                     align="right")
+
+
+class LatestPlayersPage(Paged):
+    """The players who played last (#7): the nickname, NEW on their first day, today's
+    clears and unfinished attempts, and how long ago they last played."""
+
+    name = "players"
+
+    def rows(self, state):
+        return state.play.recent_players if state.play else ()
+
+    @staticmethod
+    def today(player):
+        """Today's counts, from the longest wording to the shortest."""
+        if not (player.clears or player.attempts):
+            return ("not today",)
+        long = [f"{player.clears} clear{'' if player.clears == 1 else 's'}"] if player.clears else []
+        short = [f"{player.clears} cl"] if player.clears else []
+        if player.attempts:
+            long.append(f"{player.attempts} unfinished")
+            short.append(f"{player.attempts} unfin.")
+        return ", ".join(long), ", ".join(long[:1] + short[1:]), ", ".join(short)
+
+    def draw_row(self, image, y, player, state, shade, right):
+        ui = self.ui
+        # NEW where the stars stand on the scores page: an inverted tag of the tiny font does not read
+        tag = ui.tiny.width("NEW") if player.first_day else 0
+        name = fit((ui.body, ui.tiny), player.player, right - 1 - tag - 4)
+        name.draw(image, 1, y + ui.body.cap - name.cap, player.player, fill=shade)
+        if tag:
+            ui.tiny.draw(image, right, y + 1, "NEW", fill=shade, align="right")
+        ago = fmt_age(state.now - player.last_at) + " ago"
+        room = right - 1 - ui.tiny.width(ago) - 4
+        words = self.today(player)
+        text = next((w for w in words if ui.tiny.width(w) <= room), words[-1])
+        ui.tiny.draw(image, 1, y + 10, text, fill=shade)
+        ui.tiny.draw(image, right, y + 10, ago, fill=GREY, align="right")
 
 
 class AllTimePage(Page):
@@ -461,5 +572,6 @@ def stopped(ui, wall, last=None, banner=True):
 
 def rotation(ui, credits_speed=8.0):
     """The pages that take turns, in order (#5)."""
-    return [ServerPage(ui), WarningsPage(ui), TodayPage(ui), LatestPage(ui), ActivityPage(ui),
-            TopPlayersPage(ui, speed=credits_speed), AllTimePage(ui), BoxPage(ui)]
+    return [ServerPage(ui), WarningsPage(ui), TodayPage(ui), LatestScoresPage(ui),
+            LatestPlayersPage(ui), ActivityPage(ui), TopPlayersPage(ui, speed=credits_speed),
+            AllTimePage(ui), BoxPage(ui)]

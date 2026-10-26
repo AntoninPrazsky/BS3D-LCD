@@ -15,8 +15,8 @@ from .. import screenshots
 from . import strip
 from .demo import ALERTS, DemoSource
 from .director import Director
-from .pages import (ActivityPage, AlertPage, AllTimePage, BoxPage, LatestPage, ServerPage, TodayPage,
-                    TopPlayersPage, WarningsPage, stopped)
+from .pages import (ActivityPage, AlertPage, AllTimePage, BoxPage, LatestPlayersPage, LatestScoresPage,
+                    ServerPage, TodayPage, TopPlayersPage, WarningsPage, stopped)
 from .siren import Siren
 from .state import Alert, State
 from .ui import UI
@@ -54,15 +54,17 @@ def shots(ui):
     warned = demo_state([alert("backup-old", 64)])
     failing = demo_state([alert("api-down", 3), alert("backup-old", 64)])
     top = TopPlayersPage(ui)
+    latest, players = LatestScoresPage(ui), LatestPlayersPage(ui)
     return [
-        ("server", screen(ui, calm, ServerPage(ui), 1.0, 0, 7)),
-        ("today", screen(ui, calm, TodayPage(ui), 1.0, 1, 7)),
-        ("latest", screen(ui, calm, LatestPage(ui), 1.0, 2, 7)),
-        ("activity", screen(ui, calm, ActivityPage(ui), 1.0, 3, 7)),
-        ("top", screen(ui, calm, top, 0.0, 4, 7)),
-        ("top-roll", screen(ui, calm, top, top.hold + 9.0, 4, 7)),
-        ("all", screen(ui, calm, AllTimePage(ui), 1.0, 5, 7)),
-        ("box", screen(ui, calm, BoxPage(ui), 1.0, 6, 7)),
+        ("server", screen(ui, calm, ServerPage(ui), 1.0, 0, 8)),
+        ("today", screen(ui, calm, TodayPage(ui), 1.0, 1, 8)),
+        ("latest", screen(ui, calm, latest, 1.0, 2, 8)),
+        ("players", screen(ui, calm, players, 1.0, 3, 8)),
+        ("activity", screen(ui, calm, ActivityPage(ui), 1.0, 4, 8)),
+        ("top", screen(ui, calm, top, 0.0, 5, 8)),
+        ("top-roll", screen(ui, calm, top, top.hold + 9.0, 5, 8)),
+        ("all", screen(ui, calm, AllTimePage(ui), 1.0, 6, 8)),
+        ("box", screen(ui, calm, BoxPage(ui), 1.0, 7, 8)),
         ("warnings", screen(ui, warned, WarningsPage(ui), 1.0, 1, 5)),
         ("alert", screen(ui, failing, AlertPage(ui), 1.0, -1, 5)),
         ("stopped", stopped(ui, WALL, screen(ui, calm, ServerPage(ui), 1.0, 0, 5)).convert("L")),

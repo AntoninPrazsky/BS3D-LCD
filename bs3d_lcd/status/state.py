@@ -55,13 +55,25 @@ class Player:
 
 @dataclass(frozen=True)
 class Clear:
-    """One of the newest clears (BS3D-API#13)."""
+    """One of the newest submissions (BS3D-API#13, #15): a clear, or with 0 stars an
+    unfinished attempt."""
 
     level: str              # the level's name, as the ceiling tables give it
     player: str
     stars: int
     score: int
     at: float
+
+
+@dataclass(frozen=True)
+class RecentPlayer:
+    """One of the players who played last (BS3D-API#15), with today's counts."""
+
+    player: str
+    last_at: float
+    clears: int             # today, the Prague day
+    attempts: int           # unfinished attempts today
+    first_day: bool         # their first submission came today
 
 
 @dataclass(frozen=True)
@@ -78,6 +90,8 @@ class Play:
     seconds_today: float = 0.0
     last_score_at: float | None = None
     latest: tuple = ()                  # Clear rows, newest first
+    recent: tuple = ()                  # Clear rows with the unfinished attempts (BS3D-API#15)
+    recent_players: tuple = ()          # RecentPlayer rows, by their last submission
     month: str = ""                     # "2026-10"
     top_month: tuple = ()               # Player rows
     top_all: tuple = ()

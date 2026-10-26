@@ -10,7 +10,7 @@ import math
 import random
 import time
 
-from .state import ERROR, WARNING, Alert, Box, Clear, Play, Player, Server, State
+from .state import ERROR, WARNING, Alert, Box, Clear, Play, Player, RecentPlayer, Server, State
 
 NAMES = ("Kateřina", "Bublinka", "Jiří", "Šárka_7", "Ondra-K", "Łukasz", "Žaneta",
          "Ægir", "Tomáš", "Mia", "Ľubo", "Zdeněk", "Øyvind", "Bára", "Kuba 77", "Eliška",
@@ -104,9 +104,21 @@ class DemoSource:
                        for (level, stars, score, ago), player in zip(
                            (("Pagoda", 3, 39_707, 0), ("Lean", 4, 43_834, 640), ("Pylon", 2, 28_464, 1900)),
                            self.top_month[3:6]))
+        # The newest submissions, an unfinished attempt (0 stars) among them, and who played last
+        names = [p.name for p in self.top_month]
+        recent = tuple(Clear(level, names[who], stars, score, last - ago) for level, who, stars, score, ago in (
+            ("Pagoda", 3, 3, 39_707, 0), ("Pagoda", 3, 0, 21_380, 95), ("Lean", 4, 4, 43_834, 640),
+            ("Swan", 0, 3, 41_250, 820), ("Pylon", 5, 2, 28_464, 1900), ("Swan", 0, 0, 12_004, 2140),
+            ("Kite", 7, 3, 36_118, 2600), ("Mill", 2, 4, 47_990, 3300), ("Kite", 7, 1, 19_870, 3400)))
+        players = tuple(RecentPlayer(names[who], last - ago, clears, attempts, first)
+                        for who, ago, clears, attempts, first in (
+                            (3, 0, 6, 2, False), (4, 640, 3, 0, True), (0, 820, 12, 4, False),
+                            (5, 1900, 1, 0, False), (7, 2600, 2, 1, True), (2, 3300, 9, 0, False),
+                            (8, 9000, 0, 1, False), (1, 30_000, 4, 3, False), (9, 140_000, 0, 0, False)))
         play = Play(at=wall - (wall % 15), hours=hours, clears_today=sum(hours) // 3,
                     attempts_today=sum(hours) // 9, players_today=11, new_players_today=2,
                     seconds_today=sum(hours) * 47.0, last_score_at=last, latest=latest,
+                    recent=recent, recent_players=players,
                     month=time.strftime("%Y-%m", time.localtime(wall)),
                     top_month=self.top_month, top_all=self.top_all,
                     players=137, clears=4_812, attempts=1_377, boards=176, boards_cleared=149, notes=23)

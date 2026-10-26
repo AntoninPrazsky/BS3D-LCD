@@ -44,7 +44,8 @@ def status(ui, image, state, t):
 
 
 def clock(ui, image, wall, centre):
-    """HH:MM with a colon that blinks once a second, centred on ``centre``."""
+    """HH:MM with a colon that blinks once a second, centred on ``centre``. Returns its
+    right edge."""
     font = ui.tiny
     local = time.localtime(wall)
     hours, minutes = f"{local.tm_hour:02d}", f"{local.tm_min:02d}"
@@ -53,15 +54,20 @@ def clock(ui, image, wall, centre):
     if wall % 1.0 < 0.5:
         font.draw(image, x, 1, ":")
     x += font.width(":") + 1
-    font.draw(image, x, 1, minutes)
+    return x + font.draw(image, x, 1, minutes)
 
 
-def dots(image, index, count, right):
-    """A dot for each page, the current one dark."""
-    x = right - (count * 6 - 2)
+def dots(image, index, count, right, left=0):
+    """A dot for each page, the current one dark; narrower dots when so many would
+    reach ``left`` (eight pages and more, with the clock there)."""
+    gap = 2
+    for width in (4, 3, 2):
+        if count * (width + gap) - gap <= right - left:
+            break
+    x = right - (count * (width + gap) - gap)
     for i in range(count):
-        image.paste(255 if i == index else GREY, (x, 2, x + 4, 5))
-        x += 6
+        image.paste(255 if i == index else GREY, (x, 2, x + width, 5))
+        x += width + gap
 
 
 def render(ui, state, t, index=0, count=0, label=None):
@@ -73,8 +79,8 @@ def render(ui, state, t, index=0, count=0, label=None):
         ui.tiny.draw(image, WIDTH // 2, 1, label, align="center")
     else:
         status(ui, image, state, t)
-        clock(ui, image, state.now, WIDTH // 2 + 6)
+        edge = clock(ui, image, state.now, WIDTH // 2 + 6)
         if count > 1:
-            dots(image, index, count, WIDTH)
+            dots(image, index, count, WIDTH, edge + 2)
     image.paste(255, (0, HEIGHT - 1), RULE)
     return image

@@ -285,9 +285,10 @@ def iso(t):
     return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f0+00:00")
 
 
-def status(at, refusals=None, offbox=None, offsite=None):
-    """A status snapshot as BS3D-API's admin status-feed writes it (its #13)."""
-    return {
+def status(at, refusals=None, offbox=None, offsite=None, recent=True):
+    """A status snapshot as BS3D-API's admin status-feed writes it (its #13); without
+    ``recent``, as a service before its #15 wrote it."""
+    data = {
         "format": 1, "written_at": iso(at),
         "service": {"version": "0.1.27+abc", "schema": 4, "expected_schema": 4, "db_bytes": 184320},
         "totals": {"players": 4, "clears": 102, "attempts": 23, "boards": 176, "boards_with_clear": 61,
@@ -306,6 +307,14 @@ def status(at, refusals=None, offbox=None, offsite=None):
         "backups": {"offbox": offbox, "offsite": offsite},
         "play": {"starts": 10, "clears": 4, "seconds": 600.0},
     }
+    if recent:
+        data["recent"] = [
+            {"level": "Swan", "player": "Bob", "stars": 0, "score": 1200, "at": iso(at - 30)},
+            {"level": "Pagoda", "player": "Ann", "stars": 3, "score": 39707, "at": iso(at - 60)}]
+        data["recent_players"] = [
+            {"player": "Bob", "last_at": iso(at - 30), "clears": 0, "attempts": 1, "first_day": True},
+            {"player": "Ann", "last_at": iso(at - 60), "clears": 2, "attempts": 0, "first_day": False}]
+    return data
 
 
 class SnapshotTest(MonitorCase):
@@ -334,6 +343,18 @@ class SnapshotTest(MonitorCase):
         self.assertEqual([(p.rank, p.name, p.score) for p in play.top_all], [(1, "Ann", 500), (2, "Bob", 300)])
         self.assertEqual((play.latest[0].level, play.latest[0].player, play.latest[0].stars),
                          ("Pagoda", "Ann", 3))
+        self.assertEqual([(c.level, c.player, c.stars, c.score) for c in play.recent],
+                         [("Swan", "Bob", 0, 1200), ("Pagoda", "Ann", 3, 39707)])
+        self.assertAlmostEqual(play.recent[0].at, T0 - 30, places=3)
+        self.assertEqual([(p.player, p.clears, p.attempts, p.first_day) for p in play.recent_players],
+                         [("Bob", 0, 1, True), ("Ann", 2, 0, False)])
+        self.assertAlmostEqual(play.recent_players[1].last_at, T0 - 60, places=3)
+
+    def test_a_snapshot_from_before_the_newest_submissions_reads_them_as_empty(self):
+        self.snapshot = status(T0, recent=False)
+        play = self.tick().play
+        self.assertEqual((play.recent, play.recent_players), ((), ()))
+        self.assertEqual(len(play.latest), 1)
 
     def test_old_statistics_are_a_warning_while_the_service_runs(self):
         self.assertNotIn("stats", self.keys(self.run_for(110)))

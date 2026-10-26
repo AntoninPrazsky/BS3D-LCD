@@ -10,10 +10,10 @@ from bs3d_lcd.font import Font, font_names
 from bs3d_lcd.status import shots, strip
 from bs3d_lcd.status.demo import ALERTS, DemoSource
 from bs3d_lcd.status.pages import (HEIGHT, WIDTH, ActivityPage, AlertPage, AllTimePage, BoxPage,
-                                   LatestPage, RecoveredPage, ServerPage, TodayPage, TopPlayersPage,
-                                   WarningsPage)
-from bs3d_lcd.status.state import Alert, Play, Player, Server, State
-from bs3d_lcd.status.ui import UI, fmt_age, fmt_int, fmt_span
+                                   LatestPlayersPage, LatestScoresPage, RecoveredPage, ServerPage,
+                                   TodayPage, TopPlayersPage, WarningsPage)
+from bs3d_lcd.status.state import Alert, Clear, Play, Player, RecentPlayer, Server, State
+from bs3d_lcd.status.ui import GREY, UI, fmt_age, fmt_int, fmt_span, page
 
 UI_ = UI()
 
@@ -66,6 +66,12 @@ class FormatTest(unittest.TestCase):
         self.assertEqual(fmt_span(42), "42s")
 
 
+def page_with(draw):
+    image = page(WIDTH, HEIGHT)
+    draw(image)
+    return image
+
+
 def states():
     """Made-up states: a busy day, an empty server, nothing read yet, old data,
     every alert at once, the longest nicknames."""
@@ -76,6 +82,8 @@ def states():
                           for i in range(6))
     longest = tuple(Player(i + 1, "ŘŽŠÁÉŮÝÍĚĎŤŇÓÚŮŘ"[:16], 9_999_999, 999, 2997)
                     for i in range(10))
+    long_clears = tuple(Clear("Pagoda", "ŘŽŠÁÉŮÝÍĚĎŤŇÓÚŮŘ", 4, 9_999_999, busy.now - 23 * 3600) for _ in range(9))
+    long_players = tuple(RecentPlayer("ŘŽŠÁÉŮÝÍĚĎŤŇÓÚŮŘ", busy.now - 59 * 60, 99, 99, True) for _ in range(9))
     return {
         "busy": busy,
         "empty": State(now=busy.now, server=busy.server,
@@ -84,13 +92,14 @@ def states():
         "offline": replace(busy, server=Server(at=busy.now, online=False)),
         "stale": replace(busy, play=replace(busy.play, at=busy.now - 3600)),
         "alerts": replace(busy, alerts=many),
-        "longest": replace(busy, play=replace(busy.play, top_month=longest, top_all=longest)),
+        "longest": replace(busy, play=replace(busy.play, top_month=longest, top_all=longest,
+                                              recent=long_clears, recent_players=long_players)),
     }
 
 
 class PagesTest(unittest.TestCase):
-    PAGES = (ServerPage(UI_), TodayPage(UI_), LatestPage(UI_), ActivityPage(UI_), TopPlayersPage(UI_),
-             AllTimePage(UI_), WarningsPage(UI_), BoxPage(UI_),
+    PAGES = (ServerPage(UI_), TodayPage(UI_), LatestScoresPage(UI_), LatestPlayersPage(UI_),
+             ActivityPage(UI_), TopPlayersPage(UI_), AllTimePage(UI_), WarningsPage(UI_), BoxPage(UI_),
              AlertPage(UI_), RecoveredPage(UI_, ("API DOWN", "TUNNEL DOWN"), 754))
 
     def test_every_page_renders_at_its_size(self):
@@ -110,13 +119,28 @@ class PagesTest(unittest.TestCase):
                 image = strip.render(UI_, state, 1.0, 2, 4)
                 self.assertEqual(image.size, (128, strip.HEIGHT))
 
+    def test_the_page_dots_never_reach_the_clock(self):
+        state = states()["busy"]
+        edge = strip.clock(UI_, page(WIDTH, strip.HEIGHT), state.now, WIDTH // 2 + 6)
+        from bs3d_lcd.status.pages import rotation
+        for count in range(2, len(rotation(UI_)) + 2):
+            with self.subTest(count=count):
+                image = strip.render(UI_, state, 1.0, 0, count)
+                self.assertIsNone(image.crop((edge, 2, edge + 2, 5)).getbbox())
+                row = [image.getpixel((x, 3)) > 0 for x in range(edge + 2, WIDTH)]
+                runs = sum(1 for i, on in enumerate(row) if on and (i == 0 or not row[i - 1]))
+                self.assertEqual(runs, count)
+
     def test_pages_with_nothing_to_say_are_skipped(self):
         s = states()
         self.assertTrue(TopPlayersPage(UI_).skip(s["empty"]))
         self.assertTrue(WarningsPage(UI_).skip(s["busy"]))
         self.assertFalse(WarningsPage(UI_).skip(s["alerts"]))
         self.assertTrue(ActivityPage(UI_).skip(s["unknown"]))
-        self.assertTrue(LatestPage(UI_).skip(s["empty"]))
+        self.assertTrue(LatestScoresPage(UI_).skip(s["empty"]))
+        self.assertTrue(LatestPlayersPage(UI_).skip(s["empty"]))
+        self.assertFalse(LatestScoresPage(UI_).skip(s["busy"]))
+        self.assertFalse(LatestPlayersPage(UI_).skip(s["busy"]))
         self.assertFalse(TodayPage(UI_).skip(s["empty"]))
         self.assertFalse(ServerPage(UI_).skip(s["unknown"]))
 
@@ -135,18 +159,79 @@ class PagesTest(unittest.TestCase):
         self.assertEqual(loop.crop((0, 0, WIDTH, HEIGHT)).tobytes(),
                          loop.crop((0, lap, WIDTH, lap + HEIGHT)).tobytes())
 
-    def test_the_latest_clears_fit_with_the_longest_nicknames(self):
+    def test_the_latest_scores_and_players_fit_with_the_longest_nicknames(self):
         state = states()["longest"]
-        clears = tuple(replace(c, player="ŘŽŠÁÉŮÝÍĚĎŤŇÓÚŮŘ", score=9_999_999) for c in state.play.latest)
-        state = replace(state, play=replace(state.play, latest=clears))
-        page = LatestPage(UI_)
-        image = page.render(state, 1.0)
-        self.assertEqual(image.size, (WIDTH, HEIGHT))
-        # The third clear's second line, descenders included, ends on the page's last row at most
-        last = 2 + (page.COUNT - 1) * page.PITCH + 10
-        self.assertLessEqual(last + UI_.tiny.cap + UI_.tiny.descent, HEIGHT)
-        # A long nickname takes a narrower font rather than running into the stars
-        self.assertIsNone(image.crop((WIDTH - 22, 2, WIDTH - 21, 9)).getbbox())
+        for page in (LatestScoresPage(UI_), LatestPlayersPage(UI_)):
+            for t in (0.0, 2 * page.turn + 1.0):
+                with self.subTest(page=page.name, t=t):
+                    image = page.render(state, t)
+                    self.assertEqual(image.size, (WIDTH, HEIGHT))
+                    # The third row's second line, descenders included, ends on the page's last row at most
+                    last = page.TOP + (page.ROWS - 1) * page.PITCH + 10
+                    self.assertLessEqual(last + UI_.tiny.cap + UI_.tiny.descent, HEIGHT)
+                    # A long nickname takes a narrower font rather than running into the stars or NEW
+                    self.assertIsNone(image.crop((WIDTH - 27, 2, WIDTH - 26, 9)).getbbox())
+                    # Nothing runs into the column of the sets
+                    self.assertIsNone(image.crop((WIDTH - page.BAR - 2, 0, WIDTH - page.BAR, HEIGHT)).getbbox())
+
+    def test_nine_scores_take_three_sets_of_three_pushed_up_in_turn(self):
+        page, state = LatestScoresPage(UI_), states()["busy"]
+        self.assertEqual(len(state.play.recent), 9)
+        self.assertEqual(page.duration(state, 8.0), 3 * page.turn)
+        self.assertEqual(page.position(3, 0.0), (0, 0))
+        self.assertEqual(page.position(3, page.turn - 0.01), (0, 0))
+        index, offset = page.position(3, page.turn + page.slide / 2)
+        self.assertEqual(index, 1)
+        self.assertTrue(0 < offset < HEIGHT)
+        self.assertEqual(page.position(3, page.turn + page.slide), (1, HEIGHT))
+        self.assertEqual(page.position(3, 99.0), (2, 2 * HEIGHT))
+        # The column: the current set dark, the others grey
+        for t, on in ((0.0, 0), (page.turn + page.slide, 1), (2 * page.turn + page.slide, 2)):
+            image = page.render(state, t)
+            shades = [image.getpixel((WIDTH - 1, i * HEIGHT // 3 + 8)) for i in range(3)]
+            self.assertEqual(shades, [255 if i == on else GREY for i in range(3)])
+        self.assertNotEqual(page.render(state, 0.0).tobytes(),
+                            page.render(state, page.turn + page.slide).tobytes())
+
+    def test_one_set_stays_its_time_with_no_column(self):
+        page, state = LatestScoresPage(UI_), states()["busy"]
+        state = replace(state, play=replace(state.play, recent=state.play.recent[:3]))
+        self.assertEqual(page.duration(state, 8.0), 8.0)
+        # Between the first row and the second the column would be the only thing drawn
+        self.assertEqual(page.render(state, 1.0).getpixel((WIDTH - 1, page.TOP + page.PITCH - 1)), 0)
+        three = replace(state, play=replace(state.play, recent=state.play.recent * 2))
+        self.assertEqual(page.render(three, 1.0).getpixel((WIDTH - 1, page.TOP + page.PITCH - 1)), 255)
+        state = replace(state, play=replace(state.play, recent=state.play.recent[:2] * 2))
+        self.assertEqual(page.duration(state, 8.0), 2 * page.turn)
+
+    def test_an_unfinished_attempt_has_a_grey_zero_and_star(self):
+        page, state = LatestScoresPage(UI_), states()["busy"]
+        for stars, dark in ((0, GREY), (3, 255)):
+            row = Clear("Pagoda", "Ann", stars, 21_380, state.now - 60)
+            image = page.render(replace(state, play=replace(state.play, recent=(row,))), 1.0)
+            self.assertEqual(image.crop((WIDTH - 16, 2, WIDTH, 9)).getextrema()[1], dark, stars)
+
+    def test_without_the_newest_submissions_the_clears_are_shown(self):
+        page, state = LatestScoresPage(UI_), states()["busy"]
+        older = replace(state, play=replace(state.play, recent=()))
+        self.assertEqual(page.rows(older), state.play.latest)
+        self.assertFalse(page.skip(older))
+        self.assertTrue(LatestPlayersPage(UI_).skip(replace(older, play=replace(older.play, recent_players=()))))
+
+    def test_today_s_counts_shorten_to_fit(self):
+        today = LatestPlayersPage.today
+        self.assertEqual(today(RecentPlayer("Ann", 0, 0, 0, False)), ("not today",))
+        self.assertEqual(today(RecentPlayer("Ann", 0, 1, 0, False))[0], "1 clear")
+        self.assertEqual(today(RecentPlayer("Ann", 0, 0, 2, False))[0], "2 unfinished")
+        self.assertEqual(today(RecentPlayer("Ann", 0, 12, 3, False)),
+                         ("12 clears, 3 unfinished", "12 clears, 3 unfin.", "12 cl, 3 unfin."))
+        # The longest that fits beside "59m ago" is drawn
+        page, state = LatestPlayersPage(UI_), states()["busy"]
+        row = RecentPlayer("Ann", state.now - 59 * 60, 12, 3, True)
+        image = page.render(replace(state, play=replace(state.play, recent_players=(row,))), 1.0)
+        expected = page_with(lambda im: UI_.tiny.draw(im, 1, page.TOP + 10, "12 clears, 3 unfin."))
+        self.assertEqual(image.crop((0, page.TOP + 10, 80, page.TOP + 18)).tobytes(),
+                         expected.crop((0, page.TOP + 10, 80, page.TOP + 18)).tobytes())
 
     def test_a_nickname_of_16_letters_with_marks_fits(self):
         page, state = TopPlayersPage(UI_, fade=False), states()["longest"]
