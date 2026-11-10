@@ -1,7 +1,7 @@
 """Screenshots of the status pages, from made-up data, without the hardware.
 
 ``status-PAGE.png`` is each page under the strip as the panel shows it;
-``status-push.gif`` is a push from one page to the next,
+``status-push.gif`` is a page pushed out by the next and pushed back in,
 ``status-siren.gif`` the alarm and ``status-note.gif`` the knock for a new
 note. The data are the demo's: made-up numbers and
 made-up nicknames, at a fixed time.
@@ -94,12 +94,26 @@ def write(out_dir, panel, pitch=10, colors=screenshots.LCD_COLORS, gifs=True):
     if not gifs:
         return written
 
+    # The push as a loop: the server page, the push to the activity page, that
+    # page, and the push back. A page is pushed out `turn` s after it began to
+    # come in, so each stands still for turn - slide and the two pages come round
+    # every 2 * turn. The GIF is one such period, from the end of a push back to
+    # the end of the next, so its last frame leads into its first. `turn` is one
+    # beat of the strip's online dot, so the dot is in step at the seam too (the
+    # clock's colon, on a 1 s cycle, is 0.2 s out there, which does not show),
+    # and a whole number of frames: page_time is half a frame short of it, so
+    # the push falls on that frame and not a rounding error after it, which
+    # would make the loop drift.
     fps = 25
+    turn = strip.BEAT
     calm = DemoSource(start=0.0, wall=WALL, script=False)
-    push = Director(ui, calm.state, [ServerPage(ui), ActivityPage(ui)], page_time=1.0)
-    times = [0.6 + k / fps for k in range(round(1.6 * fps))]
+    push = Director(ui, calm.state, [ServerPage(ui), ActivityPage(ui)], page_time=turn - 0.5 / fps)
+    period = 2 * turn
+    skip = round((period + push.slide_time) * fps)
+    times = [0.6 + k / fps for k in range(skip + round(period * fps))]
+    shown = list(frames(push, times))[skip:]
     animation = [screenshots.lcd(duty(panel, gray), panel.aspect, pitch // 2, colors, level)
-                 for gray, level in frames(push, times)]
+                 for gray, level in shown]
     screenshots.save_gif(animation, os.path.join(out_dir, "status-push.gif"), fps)
     written.append("status-push.gif")
 
